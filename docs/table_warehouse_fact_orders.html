@@ -1,0 +1,298 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>fact_orders - ecommerce_analytics</title>
+  <style>
+    
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: #f5f5f5;
+      }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: white;
+        min-height: 100vh;
+      }
+      header {
+        border-bottom: 3px solid #4CAF50;
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+      }
+      h1 { color: #2c3e50; font-size: 2.5em; margin-bottom: 10px; }
+      h2 { color: #34495e; margin: 30px 0 15px; font-size: 1.8em; }
+      h3 { color: #555; margin: 15px 0 10px; }
+      .subtitle { color: #7f8c8d; font-size: 1.2em; }
+      .breadcrumb { color: #95a5a6; margin-top: 10px; }
+      .breadcrumb a { color: #3498db; text-decoration: none; }
+      .breadcrumb a:hover { text-decoration: underline; }
+      .owners { color: #7f8c8d; font-size: 0.95em; margin-top: 10px; }
+      .nav {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 30px;
+        border-bottom: 2px solid #ecf0f1;
+        padding-bottom: 10px;
+      }
+      .nav a {
+        text-decoration: none;
+        color: #3498db;
+        padding: 5px 10px;
+        border-radius: 4px;
+      }
+      .nav a:hover { background: #ecf0f1; }
+      .nav a.active { background: #3498db; color: white; }
+      section { margin: 30px 0; }
+      .card {
+        background: #fafafa;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #e0e0e0;
+      }
+      th {
+        background: #34495e;
+        color: white;
+        font-weight: 600;
+      }
+      tr:hover { background: #f8f9fa; }
+      code {
+        background: #ecf0f1;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+      }
+      .badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.75em;
+        font-weight: bold;
+        margin-right: 5px;
+      }
+      .badge.pk { background: #e74c3c; color: white; }
+      .badge.unique { background: #f39c12; color: white; }
+      .badge.auto { background: #9b59b6; color: white; }
+      .badge.not-null { background: #3498db; color: white; }
+      .badge.default { background: #95a5a6; color: white; }
+      ul { padding-left: 20px; }
+      li { margin: 8px 0; }
+      .desc { color: #7f8c8d; font-size: 0.9em; }
+      .table-description {
+        background: #e8f5e9;
+        padding: 15px;
+        border-left: 4px solid #4CAF50;
+        margin-bottom: 20px;
+      }
+      footer {
+        margin-top: 50px;
+        padding-top: 20px;
+        border-top: 1px solid #e0e0e0;
+        color: #95a5a6;
+        text-align: center;
+      }
+      footer a { color: #3498db; text-decoration: none; }
+      footer a:hover { text-decoration: underline; }
+    
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📋 fact_orders</h1>
+      <p class="breadcrumb">
+        <a href="index.html">ecommerce_analytics</a> / 
+        warehouse / 
+        fact_orders
+      </p>
+    </header>
+
+    <nav class="nav">
+      <a href="index.html">Home</a>
+      <a href="lineage.html">Lineage</a>
+    </nav>
+
+    
+      <section>
+        <p class="table-description">Order fact table</p>
+      </section>
+    
+
+    <section>
+      <h2>Columns</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Constraints</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+            <tr>
+              <td><strong>order_id</strong></td>
+              <td><code>INTEGER</code></td>
+              <td>
+                <span class="badge pk">PK</span>
+                
+                <span class="badge auto">AUTO</span>
+                
+                
+              </td>
+              <td>Unique order identifier</td>
+            </tr>
+          
+            <tr>
+              <td><strong>customer_id</strong></td>
+              <td><code>INTEGER</code></td>
+              <td>
+                
+                
+                
+                <span class="badge not-null">NOT NULL</span>
+                
+              </td>
+              <td>Foreign key to dim_customers</td>
+            </tr>
+          
+            <tr>
+              <td><strong>order_date</strong></td>
+              <td><code>TIMESTAMP</code></td>
+              <td>
+                
+                
+                
+                <span class="badge not-null">NOT NULL</span>
+                
+              </td>
+              <td>Order placement date</td>
+            </tr>
+          
+            <tr>
+              <td><strong>total_amount</strong></td>
+              <td><code>DECIMAL(10,2)</code></td>
+              <td>
+                
+                
+                
+                <span class="badge not-null">NOT NULL</span>
+                
+              </td>
+              <td>Total order amount in USD</td>
+            </tr>
+          
+            <tr>
+              <td><strong>status</strong></td>
+              <td><code>VARCHAR(50)</code></td>
+              <td>
+                
+                
+                
+                <span class="badge not-null">NOT NULL</span>
+                
+              </td>
+              <td>Order status (pending, completed, cancelled)</td>
+            </tr>
+          
+        </tbody>
+      </table>
+    </section>
+
+    
+      <section>
+        <h2>Data Lineage</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Column</th>
+              <th>Source</th>
+              <th>Path</th>
+              <th>Transform</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td><strong>order_id</strong></td>
+                <td>orders_api</td>
+                <td><code>$.orderId</code></td>
+                <td>-</td>
+              </tr>
+            
+              <tr>
+                <td><strong>customer_id</strong></td>
+                <td>orders_api</td>
+                <td><code>$.customerId</code></td>
+                <td>-</td>
+              </tr>
+            
+              <tr>
+                <td><strong>order_date</strong></td>
+                <td>orders_api</td>
+                <td><code>$.createdAt</code></td>
+                <td><code>CAST(TIMESTAMP)</code></td>
+              </tr>
+            
+              <tr>
+                <td><strong>total_amount</strong></td>
+                <td>orders_api</td>
+                <td><code>$.total</code></td>
+                <td>-</td>
+              </tr>
+            
+              <tr>
+                <td><strong>status</strong></td>
+                <td>orders_api</td>
+                <td><code>$.status</code></td>
+                <td>-</td>
+              </tr>
+            
+          </tbody>
+        </table>
+      </section>
+    
+
+    
+      <section>
+        <h2>Foreign Keys</h2>
+        <ul>
+          
+            <li>
+              <strong>fk_orders_customer:</strong> 
+              customer_id → dim_customers(customer_id)
+              <span class="badge">CASCADE</span>
+            </li>
+          
+        </ul>
+      </section>
+    
+
+    <footer>
+      <p><a href="index.html">← Back to Home</a></p>
+    </footer>
+  </div>
+</body>
+</html>
+    

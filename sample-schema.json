@@ -1,0 +1,245 @@
+{
+  "project": "ecommerce_analytics",
+  "version": "1.0.0",
+  "description": "E-commerce data warehouse documentation",
+  "owners": [
+    "data-engineering@company.com",
+    "analytics-team@company.com"
+  ],
+  "targets": [
+    {
+      "db": "warehouse",
+      "engine": "postgres",
+      "schema": "public",
+      "tables": [
+        {
+          "name": "dim_customers",
+          "description": "Customer dimension table with denormalized contact information",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INTEGER",
+              "pk": true,
+              "auto_increment": true,
+              "description": "Surrogate key for customer dimension"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(255)",
+              "unique": true,
+              "nullable": false,
+              "description": "Primary email address (normalized to lowercase)"
+            },
+            {
+              "name": "full_name",
+              "type": "VARCHAR(200)",
+              "nullable": false,
+              "description": "Customer full name (first + last)"
+            },
+            {
+              "name": "address_street",
+              "type": "VARCHAR(500)",
+              "description": "Street address"
+            },
+            {
+              "name": "address_city",
+              "type": "VARCHAR(100)",
+              "description": "City"
+            },
+            {
+              "name": "postal_code",
+              "type": "VARCHAR(20)",
+              "description": "ZIP/Postal code"
+            },
+            {
+              "name": "created_at",
+              "type": "TIMESTAMP",
+              "default": "CURRENT_TIMESTAMP",
+              "nullable": false,
+              "description": "Record creation timestamp"
+            }
+          ],
+          "indexes": [
+            {
+              "name": "idx_email",
+              "columns": ["email"],
+              "unique": true
+            },
+            {
+              "name": "idx_city",
+              "columns": ["address_city"]
+            }
+          ]
+        },
+        {
+          "name": "fact_orders",
+          "description": "Order fact table",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INTEGER",
+              "pk": true,
+              "auto_increment": true,
+              "description": "Unique order identifier"
+            },
+            {
+              "name": "customer_id",
+              "type": "INTEGER",
+              "nullable": false,
+              "description": "Foreign key to dim_customers"
+            },
+            {
+              "name": "order_date",
+              "type": "TIMESTAMP",
+              "nullable": false,
+              "description": "Order placement date"
+            },
+            {
+              "name": "total_amount",
+              "type": "DECIMAL(10,2)",
+              "nullable": false,
+              "description": "Total order amount in USD"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(50)",
+              "nullable": false,
+              "description": "Order status (pending, completed, cancelled)"
+            }
+          ],
+          "foreign_keys": [
+            {
+              "name": "fk_orders_customer",
+              "columns": ["customer_id"],
+              "references": {
+                "table": "dim_customers",
+                "columns": ["customer_id"]
+              },
+              "on_delete": "CASCADE"
+            }
+          ],
+          "indexes": [
+            {
+              "name": "idx_customer",
+              "columns": ["customer_id"]
+            },
+            {
+              "name": "idx_order_date",
+              "columns": ["order_date"]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "production_mongodb",
+      "kind": "mongodb",
+      "connection": "mongodb://prod-cluster.company.com",
+      "db": "ecommerce",
+      "collection": "customers",
+      "description": "Production MongoDB cluster with customer data"
+    },
+    {
+      "id": "orders_api",
+      "kind": "api",
+      "connection": "https://api.company.com/orders",
+      "description": "REST API for order data"
+    }
+  ],
+  "mappings": [
+    {
+      "target": "warehouse.public.dim_customers.customer_id",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$._id",
+        "transform": "toInteger()"
+      },
+      "description": "MongoDB ObjectID converted to integer surrogate key"
+    },
+    {
+      "target": "warehouse.public.dim_customers.email",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.contact.email",
+        "transform": "LOWER(TRIM())"
+      },
+      "description": "Email normalized to lowercase and trimmed"
+    },
+    {
+      "target": "warehouse.public.dim_customers.full_name",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.contact",
+        "transform": "CONCAT($.firstName, ' ', $.lastName)"
+      },
+      "description": "Concatenated from first and last name fields"
+    },
+    {
+      "target": "warehouse.public.dim_customers.address_street",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.address.street"
+      },
+      "description": "Direct mapping from nested address object"
+    },
+    {
+      "target": "warehouse.public.dim_customers.address_city",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.address.city"
+      },
+      "description": "Direct mapping from nested address object"
+    },
+    {
+      "target": "warehouse.public.dim_customers.postal_code",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.address.zipCode"
+      },
+      "description": "Mapped from zipCode field"
+    },
+    {
+      "target": "warehouse.public.fact_orders.order_id",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.orderId"
+      },
+      "description": "Direct mapping from API response"
+    },
+    {
+      "target": "warehouse.public.fact_orders.customer_id",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.customerId"
+      },
+      "description": "Foreign key reference to customer"
+    },
+    {
+      "target": "warehouse.public.fact_orders.order_date",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.createdAt",
+        "transform": "CAST(TIMESTAMP)"
+      },
+      "description": "ISO timestamp converted to database timestamp"
+    },
+    {
+      "target": "warehouse.public.fact_orders.total_amount",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.total"
+      },
+      "description": "Order total in USD"
+    },
+    {
+      "target": "warehouse.public.fact_orders.status",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.status"
+      },
+      "description": "Order status from API"
+    }
+  ]
+}
