@@ -1,0 +1,165 @@
+{
+  "project": "ecommerce_analytics",
+  "version": "1.0.0",
+  "description": "E-commerce data warehouse documentation with intentional errors",
+  "owners": [
+    "data-engineering@company.com"
+  ],
+  "targets": [
+    {
+      "db": "warehouse",
+      "engine": "postgres",
+      "schema": "public",
+      "tables": [
+        {
+          "name": "dim_customers",
+          "description": "Customer dimension table",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INTEGER",
+              "pk": true,
+              "auto_increment": true,
+              "description": "Surrogate key for customer dimension"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(255)",
+              "unique": true,
+              "nullable": false
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(255)",
+              "description": "DUPLICATE COLUMN - This will cause an error!"
+            },
+            {
+              "name": "full_name",
+              "type": "VARCHAR(200)",
+              "nullable": false
+            },
+            {
+              "name": "address_street",
+              "type": "VARCHAR(500)"
+            }
+          ]
+        },
+        {
+          "name": "fact_orders",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INTEGER",
+              "pk": true,
+              "auto_increment": true,
+              "description": "Unique order identifier"
+            },
+            {
+              "name": "customer_id",
+              "type": "INTEGER",
+              "nullable": false,
+              "description": "Foreign key to dim_customers"
+            },
+            {
+              "name": "order_date",
+              "type": "TIMESTAMP",
+              "nullable": false
+            },
+            {
+              "name": "total_amount",
+              "type": "DECIMAL(10,2)",
+              "nullable": false
+            }
+          ],
+          "foreign_keys": [
+            {
+              "name": "fk_orders_customer",
+              "columns": ["customer_id"],
+              "references": {
+                "table": "dim_customers",
+                "columns": ["customer_id"]
+              },
+              "on_delete": "CASCADE"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "production_mongodb",
+      "kind": "mongodb",
+      "connection": "mongodb://prod-cluster.company.com",
+      "db": "ecommerce",
+      "collection": "customers",
+      "description": "Production MongoDB cluster with customer data"
+    },
+    {
+      "id": "orders_api",
+      "kind": "api",
+      "connection": "https://api.company.com/orders",
+      "description": "REST API for order data"
+    }
+  ],
+  "mappings": [
+    {
+      "target": "warehouse.public.dim_customers.customer_id",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$._id",
+        "transform": "toInteger()"
+      },
+      "description": "MongoDB ObjectID converted to integer surrogate key"
+    },
+    {
+      "target": "warehouse.public.dim_customers.email",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.contact.email",
+        "transform": "LOWER(TRIM())"
+      },
+      "description": "Email normalized to lowercase and trimmed"
+    },
+    {
+      "target": "warehouse.public.dim_customers.phone_number",
+      "from": {
+        "source_id": "production_mongodb",
+        "path": "$.contact.phone"
+      },
+      "description": "ERROR: phone_number column doesn't exist in target table!"
+    },
+    {
+      "target": "warehouse.public.dim_customers.address_street",
+      "from": {
+        "source_id": "nonexistent_source",
+        "path": "$.address.street"
+      },
+      "description": "ERROR: Source 'nonexistent_source' doesn't exist!"
+    },
+    {
+      "target": "warehouse.public.fact_orders.order_id",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.orderId"
+      },
+      "description": "Direct mapping from API response"
+    },
+    {
+      "target": "warehouse.public.fact_orders.customer_id",
+      "from": {
+        "source_id": "orders_api",
+        "path": "$.customerId"
+      },
+      "description": "Foreign key reference to customer"
+    },
+    {
+      "target": "warehouse.public.fact_orders.missing_source",
+      "from": {
+        "source_id": "",
+        "path": ""
+      },
+      "description": "ERROR: Missing source_id and path!"
+    }
+  ]
+}
