@@ -1,8 +1,7 @@
 // src/generators/html-generator.ts
 import * as fs from 'fs';
 import * as path from 'path';
-import { Project, Table, Column, Mapping } from '../types/ast';
-
+import { Project, Table, Column, Mapping, Source } from '../types/ast';
 export class HTMLGenerator {
   generate(ast: Project, outputDir: string): void {
     // Create output directory
@@ -22,7 +21,9 @@ export class HTMLGenerator {
 
     // Generate lineage page
     this.generateLineagePage(ast, outputDir);
-
+// Generate data and graph page for lineage
+    this.generateLineageGraphData(ast, outputDir);
+    this.generateLineageGraphPage(ast, outputDir);
     console.log(`✓ Generated documentation in ${outputDir}`);
   }
 
@@ -51,6 +52,7 @@ export class HTMLGenerator {
     <nav class="nav">
       <a href="index.html" class="active">Home</a>
       <a href="lineage.html">Lineage</a>
+      <a href="lineage-graph.html">Lineage (Graph)</a>
     </nav>
 
     <section>
@@ -127,6 +129,7 @@ export class HTMLGenerator {
     <nav class="nav">
       <a href="index.html">Home</a>
       <a href="lineage.html">Lineage</a>
+      <a href="lineage-graph.html">Lineage (Graph)</a>
     </nav>
 
     ${table.description ? `
@@ -240,6 +243,7 @@ export class HTMLGenerator {
     <nav class="nav">
       <a href="index.html">Home</a>
       <a href="lineage.html" class="active">Lineage</a>
+      <a href="lineage-graph.html">Lineage (Graph)</a>
     </nav>
 
     <section>
@@ -414,4 +418,358 @@ export class HTMLGenerator {
       footer a:hover { text-decoration: underline; }
     `;
   }
+ // backend for generating lineage graph data with transforms
+  private generateLineageGraphData(ast: Project, outputDir: string): void {
+    console.log('Generating column-level lineage graph data with transforms...');
+
+    // Define the data structure for graph elements
+    interface GraphElementData {
+      id: string;
+      label: string;
+      type: 'source-parent' | 'target-parent' | 'source-column' | 'target-column';
+      kind?: string;
+      parent?: string;
+    }
+
+    interface GraphElement {
+      data: GraphElementData;
+    }
+
+    interface GraphEdge {
+      data: {
+        id: string;
+        source: string; // ID of the source *column*
+        target: string; // ID of the target *column*
+        label?: string; // <-- NEW: For transform labels
+      };
+    }
+
+    const nodes = new Map<string, GraphElement>();
+    const edges = new Map<string, GraphEdge>();
+
+    const sourceMap = new Map<string, Source>(
+      ast.sources.map((s) => [s.id, s])
+    );
+
+    for (const mapping of ast.mappings) {
+      try {
+        const targetFQN = mapping.target;
+        const targetParts = targetFQN.split('.');
+        if (targetParts.length < 4) continue;
+
+        const targetTableId = targetParts.slice(0, 3).join('.');
+        const targetTableLabel = targetParts[2];
+        const targetColumnId = targetFQN;
+        const targetColumnLabel = targetParts[3];
+
+        const sourceId = mapping.from.source_id;
+        const sourcePath = mapping.from.path;
+        const sourceColumnId = `${sourceId}:${sourcePath}`;
+
+        const sourceObj = sourceMap.get(sourceId);
+        if (!sourceObj) continue;
+
+        const sourceTableLabel = sourceObj.collection || sourceObj.id;
+        const sourceColumnLabel = sourcePath;
+        const sourceKind = sourceObj.kind;
+
+        if (!nodes.has(targetTableId)) {
+          nodes.set(targetTableId, {
+            data: {
+              id: targetTableId,
+              label: targetTableLabel,
+              type: 'target-parent',
+            },
+          });
+        }
+        if (!nodes.has(sourceId)) {
+          nodes.set(sourceId, {
+            data: {
+              id: sourceId,
+              label: sourceTableLabel,
+              type: 'source-parent',
+              kind: sourceKind,
+            },
+          });
+        }
+
+        if (!nodes.has(targetColumnId)) {
+          nodes.set(targetColumnId, {
+            data: {
+              id: targetColumnId,
+              label: targetColumnLabel,
+              type: 'target-column',
+              parent: targetTableId,
+            },
+          });
+        }
+        if (!nodes.has(sourceColumnId)) {
+          nodes.set(sourceColumnId, {
+            data: {
+              id: sourceColumnId,
+              label: sourceColumnLabel,
+              type: 'source-column',
+              parent: sourceId,
+            },
+          });
+        }
+
+        const edgeId = `${sourceColumnId}_to_${targetColumnId}`;
+        if (!edges.has(edgeId)) {
+          edges.set(edgeId, {
+            data: {
+              id: edgeId,
+              source: sourceColumnId,
+              target: targetColumnId,
+              label: mapping.from.transform, // <-- NEW: Add the transform string as a label
+            },
+          });
+        }
+      } catch (e) {
+        console.error(`Error processing mapping for ${mapping.target}:`, e);
+      }
+    }
+
+    const graphData = {
+      nodes: Array.from(nodes.values()),
+      edges: Array.from(edges.values()),
+    };
+
+    const outputPath = path.join(outputDir, 'lineage-data.json');
+    fs.writeFileSync(outputPath, JSON.stringify(graphData, null, 2));
+
+    console.log(`✓ Generated column-level lineage data at ${outputPath}`);
+  }
+  // fronntend for the lineage graph
+  private generateLineageGraphPage(ast: Project, outputDir: string): void {
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Lineage Graph - ${ast.project}</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.23.0/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<style>
+    ${this.getBaseStyles()}
+    #cy {
+      width: 100%;
+      height: 80vh;
+      border: 1px solid #e0e0e0;
+      background: #fafafa;
+      box-sizing: border-box;
+    }
+    .cytoscape-tooltip {
+        background: #333;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        position: absolute;
+        z-index: 1000;
+        pointer-events: none;
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+    }
+    .cytoscape-tooltip.active {
+        opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🧬 Data Lineage Graph</h1>
+      <p class="subtitle">Visualizing Column-Level Source → Target dependencies</p>
+    </header>
+
+    <nav class="nav">
+      <a href="index.html">Home</a>
+      <a href="lineage.html">Lineage (Table)</a>
+      <a href="lineage-graph.html" class="active">Lineage (Graph)</a>
+    </nav>
+
+    <section>
+      <div id="cy"></div>
+    </section>
+
+    <footer>
+      <p><a href="index.html">← Back to Home</a></p>
+    </footer>
+  </div>
+
+  <script>
+    cytoscape.use(cytoscapeDagre);
+
+    document.addEventListener('DOMContentLoaded', function () {
+      fetch('./lineage-data.json')
+        .then((res) => res.json())
+        .then((data) => {
+          var cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: data,
+            style: [
+              {
+                selector: 'edge',
+                style: {
+                  'curve-style': 'bezier',
+                  'target-arrow-shape': 'triangle',
+                  'line-color': '#7f8c8d',
+                  'target-arrow-color': '#7f8c8d',
+                  'width': 1,
+                },
+              },
+              // --- NEW STYLE FOR TRANSFORM LABELS ---
+              {
+                selector: 'edge[label]', // Only applies to edges that *have* a label
+                style: {
+                  'label': 'data(label)',
+                  'font-size': '9px',
+                  'color': '#0B5345', // Dark green/blue
+                  'font-weight': 'bold',
+                  'text-background-opacity': 1,
+                  'text-background-color': '#F8F9F9', // Light background
+                  'text-background-padding': '2px',
+                  'text-background-shape': 'round-rectangle',
+                  'edge-text-rotation': 'autorotate',
+                  'text-margin-y': -10, // Move label slightly off the line
+                }
+              },
+              // --- END NEW STYLE ---
+              {
+                selector: 'node',
+                style: {
+                  'shape': 'round-rectangle',
+                  'border-width': '1px',
+                  'border-color': '#555',
+                  'label': 'data(label)',
+                  'text-valign': 'center',
+                  'text-halign': 'center',
+                  'font-family': 'Arial, sans-serif',
+                  'text-wrap': 'wrap',
+                  'text-max-width': '80px',
+                  'font-size': '10px',
+                  'background-color': '#fdfefe',
+                }
+              },
+              {
+                selector: ':parent',
+                style: {
+                  'background-opacity': 0.15,
+                  'border-style': 'solid',
+                  'font-size': '14px',
+                  'font-weight': 'bold',
+                  'text-valign': 'top',
+                  'text-halign': 'center',
+                  'padding': '20px',
+                  'label': 'data(label)',
+                  'text-margin-y': '-5px',
+                },
+              },
+              {
+                selector: 'node[type="source-parent"]',
+                style: {
+                  'background-color': '#EBF5FB',
+                  'border-color': '#5DADE2',
+                  'text-outline-color': '#EBF5FB',
+                  'text-outline-width': 2,
+                },
+              },
+              {
+                selector: 'node[type="target-parent"]',
+                style: {
+                  'background-color': '#FEF9E7',
+                  'border-color': '#F7DC6F',
+                  'text-outline-color': '#FEF9E7',
+                  'text-outline-width': 2,
+                },
+              },
+              {
+                selector: 'node[type="source-column"]',
+                style: {
+                  'background-color': '#AED6F1',
+                  'border-color': '#5DADE2',
+                  'font-size': '10px',
+                  'width': '110px',
+                  'height': '30px',
+                },
+              },
+              {
+                selector: 'node[type="target-column"]',
+                style: {
+                  'background-color': '#FAD7A0',
+                  'border-color': '#F7DC6F',
+                  'font-size': '10px',
+                  'width': '110px',
+                  'height': '30px',
+                },
+              },
+              {
+                selector: '.highlighted',
+                style: {
+                  'background-color': '#5cb85c',
+                  'line-color': '#5cb85c',
+                  'target-arrow-color': '#5cb85c',
+                  'transition-property': 'background-color, line-color, target-arrow-color',
+                  'transition-duration': '0.3s'
+                }
+              }
+            ],
+            
+            // --- UPDATED LAYOUT SETTINGS ---
+            layout: {
+              name: 'dagre',
+              rankDir: 'LR',
+              spacingFactor: 1.3, // A bit more overall spacing
+              nodeSep: 30, // Tighter vertical spacing for columns
+              edgeSep: 10,
+              rankSep: 150, // More horizontal spacing between tables
+              padding: 40,
+              fit: true,
+              animate: false,
+              nodeDimensionsIncludeLabels: true,
+            },
+            // --- END UPDATED LAYOUT ---
+          });
+
+          // (The tooltip script remains the same)
+          cy.on('mouseover', 'node[type$="-column"]', function(event) {
+              const node = event.target;
+              const tooltip = document.createElement('div');
+              tooltip.className = 'cytoscape-tooltip';
+              tooltip.textContent = node.data('id');
+              document.body.appendChild(tooltip);
+
+              const updateTooltipPos = (e) => {
+                  tooltip.style.left = (e.pageX + 10) + 'px';
+                  tooltip.style.top = (e.pageY + 10) + 'px';
+              };
+              updateTooltipPos(event.originalEvent);
+              tooltip.classList.add('active');
+
+              cy.on('mousemove', updateTooltipPos);
+
+              node.on('mouseout', function() {
+                  tooltip.classList.remove('active');
+                  tooltip.remove();
+                  cy.off('mousemove', updateTooltipPos);
+              });
+          });
+
+        })
+        .catch((e) => {
+          console.error('Error fetching lineage data:', e);
+          document.getElementById('cy').innerHTML = '<strong>Error loading lineage data.</strong><br>Did you run the generator? Is lineage-data.json available?';
+        });
+    });
+  </script>
+</body>
+</html>
+    `;
+    fs.writeFileSync(path.join(outputDir, 'lineage-graph.html'), html);
+  }
+
 }
