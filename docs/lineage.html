@@ -4,240 +4,352 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Lineage - ecommerce_analytics</title>
+  <title>Lineage</title>
+  <!-- Scripts for Graph -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.23.0/cytoscape.min.js"></script>
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
   <style>
     
+      /* CLARITY THEME - VARIABLES */
+      :root {
+        --sidebar-width: 260px;
+        --primary: #1e293b;
+        --accent: #7c3aed; /* Purple 600 */
+        --accent-light: #f5f3ff; /* Purple 50 */
+        --text-dark: #0f172a;
+        --text-muted: #64748b;
+        --bg-body: #ffffff;
+        --bg-sidebar: #f8fafc;
+        --border: #e2e8f0;
+        --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+        --font-mono: 'JetBrains Mono', monospace;
+      }
+
+      /* RESET */
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-family: var(--font-sans);
+        color: var(--text-dark);
+        background-color: var(--bg-body);
         line-height: 1.6;
-        color: #333;
-        background: #f5f5f5;
+        min-height: 100vh;
+        display: flex;
       }
-      .container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-        background: white;
+
+      /* LAYOUT */
+      .app-layout {
+        display: flex;
+        width: 100%;
         min-height: 100vh;
       }
-      header {
-        border-bottom: 3px solid #4CAF50;
-        padding-bottom: 20px;
-        margin-bottom: 30px;
-      }
-      h1 { color: #2c3e50; font-size: 2.5em; margin-bottom: 10px; }
-      h2 { color: #34495e; margin: 30px 0 15px; font-size: 1.8em; }
-      h3 { color: #555; margin: 15px 0 10px; }
-      .subtitle { color: #7f8c8d; font-size: 1.2em; }
-      .breadcrumb { color: #95a5a6; margin-top: 10px; }
-      .breadcrumb a { color: #3498db; text-decoration: none; }
-      .breadcrumb a:hover { text-decoration: underline; }
-      .owners { color: #7f8c8d; font-size: 0.95em; margin-top: 10px; }
-      .nav {
+
+      /* SIDEBAR STYLES */
+      .sidebar {
+        width: var(--sidebar-width);
+        background-color: var(--bg-sidebar);
+        border-right: 1px solid var(--border);
+        height: 100vh;
+        position: fixed;
+        left: 0;
+        top: 0;
+        overflow-y: auto;
         display: flex;
-        gap: 20px;
-        margin-bottom: 30px;
-        border-bottom: 2px solid #ecf0f1;
-        padding-bottom: 10px;
+        flex-direction: column;
+        z-index: 50;
       }
-      .nav a {
-        text-decoration: none;
-        color: #3498db;
-        padding: 5px 10px;
-        border-radius: 4px;
+
+      .brand {
+        padding: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        border-bottom: 1px solid var(--border);
       }
-      .nav a:hover { background: #ecf0f1; }
-      .nav a.active { background: #3498db; color: white; }
-      section { margin: 30px 0; }
-      .card {
-        background: #fafafa;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 20px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 15px 0;
-        background: white;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      }
-      th, td {
-        padding: 12px;
-        text-align: left;
-        border-bottom: 1px solid #e0e0e0;
-      }
-      th {
-        background: #34495e;
+      .logo-icon {
+        width: 32px; height: 32px; 
+        background: linear-gradient(135deg, #7c3aed, #3b82f6); 
+        border-radius: 8px; 
+        display: flex; align-items: center; justify-content: center; 
         color: white;
+      }
+      .brand-text { font-weight: 700; font-size: 1.1rem; color: var(--text-dark); }
+
+      .side-nav { padding: 1.5rem 1rem; flex: 1; }
+      .nav-section { margin-bottom: 2rem; }
+      .nav-header {
+        text-transform: uppercase; font-size: 0.7rem; font-weight: 700;
+        color: #94a3b8; margin-bottom: 0.5rem; padding-left: 0.75rem; letter-spacing: 0.05em;
+      }
+
+      .nav-item {
+        display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem;
+        color: var(--text-muted); text-decoration: none; border-radius: 8px;
+        font-size: 0.9rem; font-weight: 500; margin-bottom: 0.25rem; transition: all 0.2s;
+      }
+      .nav-item:hover { background-color: white; color: var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+      .nav-item.active { background-color: var(--accent-light); color: var(--accent); font-weight: 600; }
+      .nav-item.static { cursor: default; opacity: 0.8; }
+
+      .sidebar-footer { padding: 1.5rem; border-top: 1px solid var(--border); text-align: center; }
+      .version-badge { background: #e2e8f0; color: #475569; padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600; }
+
+      /* MAIN CONTENT */
+      .main-content { margin-left: var(--sidebar-width); flex: 1; padding: 3rem; width: calc(100% - var(--sidebar-width)); }
+      .content-wrapper { max-width: 1200px; margin: 0 auto; }
+      .bg-gradient-blob { position: fixed; top: -20%; right: -10%; width: 600px; height: 600px; background: radial-gradient(circle at center, rgba(232, 218, 255, 0.4) 0%, rgba(255, 255, 255, 0) 70%); z-index: -1; pointer-events: none; }
+
+      /* COMPONENTS */
+      .page-header { margin-bottom: 2.5rem; display: flex; justify-content: space-between; align-items: start; }
+      h1 { font-size: 2rem; font-weight: 700; color: var(--text-dark); margin: 0.5rem 0 0 0; letter-spacing: -0.5px; }
+      .subtitle { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.25rem; }
+      .breadcrumbs { font-size: 0.8rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
+      
+      .card { background: white; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 1.5rem; overflow: hidden; }
+      .card-header { padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: #fcfcfc; }
+      .card-header h3 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-dark); }
+      .card-body { padding: 1.5rem; }
+      .card-title { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); font-weight: 600; color: var(--text-dark); background: #fcfcfc; }
+
+      .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 3rem; }
+      .stat-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; display: flex; align-items: center; gap: 1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+      .stat-icon { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+      .stat-icon.purple { background: #f3e8ff; }
+      .stat-icon.blue { background: #e0f2fe; }
+      .stat-icon.pink { background: #fce7f3; }
+      .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text-dark); line-height: 1; }
+      .stat-label { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; margin-top: 0.25rem; }
+      
+      .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1.5rem; }
+      
+      /* TABLES */
+      .table-responsive { overflow-x: auto; }
+      .data-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+      .data-table th { text-align: left; padding: 0.85rem 1.25rem; background: #f8fafc; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+      .data-table td { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); color: var(--text-dark); vertical-align: top; }
+      .data-table tr:last-child td { border-bottom: none; }
+
+      /* BADGES */
+      .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+      .badge.bg-purple { background: #eff6ff; color: var(--accent); }
+      .badge.bg-purple-light { background: var(--accent-light); color: var(--accent); }
+      .badge.outline { border: 1px solid var(--accent); color: var(--accent); }
+      .badge.pk { background: #fee2e2; color: #dc2626; }
+      .badge.unique { background: #ffedd5; color: #ea580c; }
+      .badge.nn { background: #e0f2fe; color: #0284c7; }
+      .badge.def { background: #f1f5f9; color: #64748b; }
+      .badge.source { background: #dcfce7; color: #166534; font-family: var(--font-mono); text-transform: none; font-size: 0.8rem; }
+      .code-pill { background: #f1f5f9; padding: 0.15rem 0.4rem; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85em; color: #475569; border: 1px solid #e2e8f0; }
+
+      ul.table-list { list-style: none; padding: 0; margin: 0; }
+      ul.table-list li { border-bottom: 1px solid #f1f5f9; }
+      ul.table-list a { display: block; padding: 0.75rem 0; color: var(--text-dark); text-decoration: none; font-weight: 500; font-size: 0.95rem; transition: color 0.2s; }
+      ul.table-list a:hover { color: var(--accent); }
+      
+      .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+      .meta-grid .label { font-weight: 700; color: var(--text-dark); font-size: 0.7rem; margin-right: 0.25rem; background: #f1f5f9; padding: 0.1rem 0.3rem; rounded: 3px; }
+      .meta-badge { display: inline-block; margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted); background: white; padding: 0.25rem 0.75rem; border-radius: 20px; border: 1px solid var(--border); }
+      
+      .legend { display: flex; gap: 1rem; align-items: center; }
+      .legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+      .dot { width: 8px; height: 8px; border-radius: 50%; }
+      .dot.blue { background: #60a5fa; }
+      .dot.yellow { background: #fbbf24; }
+
+      /* GRAPH CONTROLS */
+      #cy { cursor: grab; }
+      #cy:active { cursor: grabbing; }
+      
+      .controls {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 10;
+        background: white;
+        padding: 8px;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border: 1px solid var(--border);
+      }
+      .control-btn {
+        width: 36px;
+        height: 36px;
+        background: white;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--text-muted);
+        font-size: 1.2rem;
         font-weight: 600;
+        transition: all 0.2s;
       }
-      tr:hover { background: #f8f9fa; }
-      code {
-        background: #ecf0f1;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-family: 'Courier New', monospace;
-        font-size: 0.9em;
+      .control-btn:hover {
+        color: var(--accent);
+        background-color: var(--accent-light);
       }
-      .badge {
-        display: inline-block;
-        padding: 3px 8px;
-        border-radius: 4px;
-        font-size: 0.75em;
-        font-weight: bold;
-        margin-right: 5px;
-      }
-      .badge.pk { background: #e74c3c; color: white; }
-      .badge.unique { background: #f39c12; color: white; }
-      .badge.auto { background: #9b59b6; color: white; }
-      .badge.not-null { background: #3498db; color: white; }
-      .badge.default { background: #95a5a6; color: white; }
-      ul { padding-left: 20px; }
-      li { margin: 8px 0; }
-      .desc { color: #7f8c8d; font-size: 0.9em; }
-      .table-description {
-        background: #e8f5e9;
-        padding: 15px;
-        border-left: 4px solid #4CAF50;
-        margin-bottom: 20px;
-      }
-      footer {
-        margin-top: 50px;
-        padding-top: 20px;
-        border-top: 1px solid #e0e0e0;
-        color: #95a5a6;
-        text-align: center;
-      }
-      footer a { color: #3498db; text-decoration: none; }
-      footer a:hover { text-decoration: underline; }
+      .divider { height: 1px; background: var(--border); margin: 2px 0; }
+
+      .page-footer { margin-top: 4rem; text-align: center; color: #94a3b8; font-size: 0.85rem; padding-bottom: 2rem; }
+      .font-mono { font-family: var(--font-mono); }
+      .text-purple { color: var(--accent); }
+      .text-muted { color: #64748b; }
+      .text-dark { color: var(--text-dark); }
     
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>🔗 Data Lineage</h1>
-      <p class="subtitle">Source → Target Mappings</p>
-    </header>
+  <div class="app-layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <div class="brand-text">nebula_streaming_platform</div>
+      </div>
+      
+      <nav class="side-nav">
+        <div class="nav-section">
+          <span class="nav-header">Overview</span>
+          <a href="index.html" class="nav-item ">
+             <span class="icon">🏠</span> Dashboard
+          </a>
+          <a href="lineage.html" class="nav-item active">
+             <span class="icon">🔢</span> Lineage Matrix
+          </a>
+          <a href="lineage-graph.html" class="nav-item ">
+             <span class="icon">🕸️</span> Visual Graph
+          </a>
+        </div>
 
-    <nav class="nav">
-      <a href="index.html">Home</a>
-      <a href="lineage.html" class="active">Lineage</a>
-      <a href="lineage-graph.html">Lineage (Graph)</a>
-    </nav>
+        <div class="nav-section">
+          <span class="nav-header">Target Tables</span>
+          
+              <a href="table_hot_storage_raw_events.html" 
+                 class="nav-item ">
+                 <span class="icon">📄</span> raw_events
+              </a>
+            
+              <a href="table_data_lake_dim_content_asset.html" 
+                 class="nav-item ">
+                 <span class="icon">📄</span> dim_content_asset
+              </a>
+            
+              <a href="table_data_lake_fact_session_summary.html" 
+                 class="nav-item ">
+                 <span class="icon">📄</span> fact_session_summary
+              </a>
+            
+        </div>
 
-    <section>
-      <h2>All Mappings (11)</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Target</th>
-            <th>Source</th>
-            <th>Path</th>
-            <th>Transform</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
+        <div class="nav-section">
+          <span class="nav-header">Source Systems</span>
           
-            <tr>
-              <td><code>warehouse.public.dim_customers.customer_id</code></td>
-              <td><strong>production_mongodb</strong></td>
-              <td><code>$._id</code></td>
-              <td><code>toInteger()</code></td>
-              <td>MongoDB ObjectID converted to integer surrogate key</td>
-            </tr>
+            <div class="nav-item static">
+               <span class="icon">📥</span> kafka_clickstream
+            </div>
           
-            <tr>
-              <td><code>warehouse.public.dim_customers.email</code></td>
-              <td><strong>production_mongodb</strong></td>
-              <td><code>$.contact.email</code></td>
-              <td><code>LOWER(TRIM())</code></td>
-              <td>Email normalized to lowercase and trimmed</td>
-            </tr>
+            <div class="nav-item static">
+               <span class="icon">📥</span> legacy_cms_oracle
+            </div>
           
-            <tr>
-              <td><code>warehouse.public.dim_customers.full_name</code></td>
-              <td><strong>production_mongodb</strong></td>
-              <td><code>$.contact</code></td>
-              <td><code>CONCAT($.firstName, ' ', $.lastName)</code></td>
-              <td>Concatenated from first and last name fields</td>
-            </tr>
+            <div class="nav-item static">
+               <span class="icon">📥</span> qos_metrics_api
+            </div>
           
-            <tr>
-              <td><code>warehouse.public.dim_customers.address_street</code></td>
-              <td><strong>production_mongodb</strong></td>
-              <td><code>$.address.street</code></td>
-              <td>-</td>
-              <td>Direct mapping from nested address object</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.dim_customers.address_city</code></td>
-              <td><strong>production_mongodb</strong></td>
-              <td><code>$.address.city</code></td>
-              <td>-</td>
-              <td>Direct mapping from nested address object</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.dim_customers.postal_code</code></td>
-              <td><strong>production_mongodb</strong></td>
-              <td><code>$.address.zipCode</code></td>
-              <td>-</td>
-              <td>Mapped from zipCode field</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.fact_orders.order_id</code></td>
-              <td><strong>orders_api</strong></td>
-              <td><code>$.orderId</code></td>
-              <td>-</td>
-              <td>Direct mapping from API response</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.fact_orders.customer_id</code></td>
-              <td><strong>orders_api</strong></td>
-              <td><code>$.customerId</code></td>
-              <td>-</td>
-              <td>Foreign key reference to customer</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.fact_orders.order_date</code></td>
-              <td><strong>orders_api</strong></td>
-              <td><code>$.createdAt</code></td>
-              <td><code>CAST(TIMESTAMP)</code></td>
-              <td>ISO timestamp converted to database timestamp</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.fact_orders.total_amount</code></td>
-              <td><strong>orders_api</strong></td>
-              <td><code>$.total</code></td>
-              <td>-</td>
-              <td>Order total in USD</td>
-            </tr>
-          
-            <tr>
-              <td><code>warehouse.public.fact_orders.status</code></td>
-              <td><strong>orders_api</strong></td>
-              <td><code>$.status</code></td>
-              <td>-</td>
-              <td>Order status from API</td>
-            </tr>
-          
-        </tbody>
-      </table>
-    </section>
+        </div>
+      </nav>
 
-    <footer>
-      <p><a href="index.html">← Back to Home</a></p>
-    </footer>
+      <div class="sidebar-footer">
+        <span class="version-badge">v2.4.0</span>
+      </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+      <!-- Subtle Background Blob -->
+      <div class="bg-gradient-blob"></div>
+      
+      <div class="content-wrapper">
+        
+      <header class="page-header">
+        <div>
+           <h1>Data Lineage Matrix</h1>
+           <p class="subtitle">Full listing of Source → Target mappings</p>
+        </div>
+      </header>
+
+      <div class="card">
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Target Column</th>
+                <th>Source</th>
+                <th>Source Path</th>
+                <th>Transformation</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+                <tr>
+                  <td class="font-mono font-medium">hot_storage.telemetry.raw_events.event_id</td>
+                  <td><strong class="text-dark">kafka_clickstream</strong></td>
+                  <td class="font-mono text-purple">$.header.messageId</td>
+                  <td><code class="code-pill">UUID()</code></td>
+                  <td class="text-sm text-muted">Extracts unique message ID from Kafka header</td>
+                </tr>
+              
+                <tr>
+                  <td class="font-mono font-medium">hot_storage.telemetry.raw_events.device_os</td>
+                  <td><strong class="text-dark">kafka_clickstream</strong></td>
+                  <td class="font-mono text-purple">$.body.deviceContext.osName</td>
+                  <td><code class="code-pill">UPPER(TRIM())</code></td>
+                  <td class="text-sm text-muted">-</td>
+                </tr>
+              
+                <tr>
+                  <td class="font-mono font-medium">data_lake.gold_layer.dim_content_asset.title</td>
+                  <td><strong class="text-dark">legacy_cms_oracle</strong></td>
+                  <td class="font-mono text-purple">ASSET_NAME_EN</td>
+                  <td><code class="code-pill">COALESCE(ASSET_NAME_EN, ASSET_NAME_LOCAL)</code></td>
+                  <td class="text-sm text-muted">Fallback to local title if English title is missing</td>
+                </tr>
+              
+                <tr>
+                  <td class="font-mono font-medium">data_lake.gold_layer.dim_content_asset.genres</td>
+                  <td><strong class="text-dark">legacy_cms_oracle</strong></td>
+                  <td class="font-mono text-purple">GENRE_TAGS_CSV</td>
+                  <td><code class="code-pill">SPLIT(GENRE_TAGS_CSV, ',')</code></td>
+                  <td class="text-sm text-muted">Converts CSV string 'Action,Drama' into Array ['Action', 'Drama']</td>
+                </tr>
+              
+                <tr>
+                  <td class="font-mono font-medium">data_lake.gold_layer.fact_session_summary.buffer_ratio</td>
+                  <td><strong class="text-dark">qos_metrics_api</strong></td>
+                  <td class="font-mono text-purple">$.metrics.rebufferTime</td>
+                  <td><code class="code-pill">DIV($.metrics.rebufferTime, $.metrics.totalPlayTime)</code></td>
+                  <td class="text-sm text-muted">Calculated field: Rebuffer Time / Total Play Time</td>
+                </tr>
+              
+            </tbody>
+          </table>
+        </div>
+      </div>
+    
+      </div>
+
+      <footer class="page-footer">
+        Generated by DBDocManager
+      </footer>
+    </main>
   </div>
 </body>
 </html>

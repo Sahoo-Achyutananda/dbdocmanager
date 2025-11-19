@@ -1,0 +1,140 @@
+{
+  "project": "nebula_streaming_platform",
+  "version": "2.4.0",
+  "description": "Real-time telemetry and user engagement platform for Nebula stream.",
+  "owners": [
+    "platform-eng@nebula.io",
+    "data-science@nebula.io"
+  ],
+  "targets": [
+    {
+      "db": "hot_storage",
+      "engine": "clickhouse",
+      "schema": "telemetry",
+      "tables": [
+        {
+          "name": "raw_events",
+          "description": "High-throughput event log directly from Kafka consumers. Retention: 7 days.",
+          "columns": [
+            { "name": "event_id", "type": "UUID", "pk": true },
+            { "name": "event_type", "type": "LowCardinality(String)", "nullable": false },
+            { "name": "user_id", "type": "UInt64", "nullable": false, "description": "Hashed user identifier" },
+            { "name": "device_os", "type": "LowCardinality(String)" },
+            { "name": "payload", "type": "String", "description": "Raw JSON payload for ad-hoc querying" },
+            { "name": "ingested_at", "type": "DateTime64(3)", "default": "now()" }
+          ],
+          "indexes": [
+            { "name": "idx_event_type", "columns": ["event_type"], "type": "bloom_filter" },
+            { "name": "idx_time", "columns": ["ingested_at"], "type": "minmax" }
+          ]
+        }
+      ]
+    },
+    {
+      "db": "data_lake",
+      "engine": "snowflake",
+      "schema": "gold_layer",
+      "tables": [
+        {
+          "name": "dim_content_asset",
+          "description": "Master dimension for movies, series, and episodes.",
+          "columns": [
+            { "name": "asset_sk", "type": "NUMBER", "pk": true, "auto_increment": true },
+            { "name": "legacy_cms_id", "type": "VARCHAR(50)", "unique": true },
+            { "name": "title", "type": "VARCHAR(255)", "nullable": false },
+            { "name": "release_year", "type": "NUMBER(4)" },
+            { "name": "genres", "type": "ARRAY", "description": "Flattened array of genres" },
+            { "name": "is_original", "type": "BOOLEAN", "default": "false" }
+          ]
+        },
+        {
+          "name": "fact_session_summary",
+          "description": "Aggregated user viewing sessions.",
+          "columns": [
+            { "name": "session_id", "type": "VARCHAR(100)", "pk": true },
+            { "name": "user_id", "type": "NUMBER", "nullable": false },
+            { "name": "content_asset_fk", "type": "NUMBER", "nullable": false, "description": "FK to dim_content_asset" },
+            { "name": "start_time", "type": "TIMESTAMP_NTZ" },
+            { "name": "duration_seconds", "type": "NUMBER" },
+            { "name": "buffer_ratio", "type": "FLOAT", "description": "Quality of Service metric: time buffering / total time" }
+          ],
+          "foreign_keys": [
+            {
+              "name": "fk_session_content",
+              "columns": ["content_asset_fk"],
+              "references": { "table": "dim_content_asset", "columns": ["asset_sk"] }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "id": "kafka_clickstream",
+      "kind": "kafka",
+      "connection": "broker.kafka.prod:9092",
+      "collection": "topic.user.clicks.v2",
+      "description": "Raw clickstream events from web and mobile clients"
+    },
+    {
+      "id": "legacy_cms_oracle",
+      "kind": "oracle",
+      "db": "CMS_PROD",
+      "collection": "ASSETS_B",
+      "description": "Legacy content management system (being deprecated in Q4)"
+    },
+    {
+      "id": "qos_metrics_api",
+      "kind": "api",
+      "connection": "https://internal-api.nebula.io/qos/v1",
+      "description": "Internal API for Quality of Service logs"
+    }
+  ],
+  "mappings": [
+    {
+      "target": "hot_storage.telemetry.raw_events.event_id",
+      "from": {
+        "source_id": "kafka_clickstream",
+        "path": "$.header.messageId",
+        "transform": "UUID()"
+      },
+      "description": "Extracts unique message ID from Kafka header"
+    },
+    {
+      "target": "hot_storage.telemetry.raw_events.device_os",
+      "from": {
+        "source_id": "kafka_clickstream",
+        "path": "$.body.deviceContext.osName",
+        "transform": "UPPER(TRIM())"
+      }
+    },
+    {
+      "target": "data_lake.gold_layer.dim_content_asset.title",
+      "from": {
+        "source_id": "legacy_cms_oracle",
+        "path": "ASSET_NAME_EN",
+        "transform": "COALESCE(ASSET_NAME_EN, ASSET_NAME_LOCAL)"
+      },
+      "description": "Fallback to local title if English title is missing"
+    },
+    {
+      "target": "data_lake.gold_layer.dim_content_asset.genres",
+      "from": {
+        "source_id": "legacy_cms_oracle",
+        "path": "GENRE_TAGS_CSV",
+        "transform": "SPLIT(GENRE_TAGS_CSV, ',')"
+      },
+      "description": "Converts CSV string 'Action,Drama' into Array ['Action', 'Drama']"
+    },
+    {
+      "target": "data_lake.gold_layer.fact_session_summary.buffer_ratio",
+      "from": {
+        "source_id": "qos_metrics_api",
+        "path": "$.metrics.rebufferTime",
+        "transform": "DIV($.metrics.rebufferTime, $.metrics.totalPlayTime)"
+      },
+      "description": "Calculated field: Rebuffer Time / Total Play Time"
+    }
+  ]
+}
