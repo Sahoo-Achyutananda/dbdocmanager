@@ -23,6 +23,9 @@ export class HTMLGenerator {
     // Generate lineage page
     this.generateLineagePage(ast, outputDir);
 
+    // Generate mapping matrix page
+    this.generateMappingMatrixPage(ast, outputDir);
+
     console.log(`✓ Generated documentation in ${outputDir}`);
   }
 
@@ -51,6 +54,8 @@ export class HTMLGenerator {
     <nav class="nav">
       <a href="index.html" class="active">Home</a>
       <a href="lineage.html">Lineage</a>
+      <a href="mapping-matrix.html">Mapping Matrix</a>
+
     </nav>
 
     <section>
@@ -99,6 +104,263 @@ export class HTMLGenerator {
     fs.writeFileSync(path.join(outputDir, 'index.html'), html);
   }
 
+  private generateMappingMatrixPage(ast: Project, outputDir: string): void {
+    const rows = ast.mappings.map(m => `
+    <tr>
+      <td><code>${m.target}</code></td>
+      <td><span class="badge-source">${m.from.source_id}</span></td>
+      <td><code>${m.from.path || '-'}</code></td>
+      <td>${m.from.transform ? `<span class="badge-transform">${m.from.transform}</span>` : '-'}</td>
+      <td>${m.description || '-'}</td>
+    </tr>
+  `).join('');
+
+    const mappingData = JSON.stringify(ast.mappings, null, 2);
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapping Matrix - ${ast.project}</title>
+  <style>
+  :root {
+    --primary: #3498db;
+    --primary-dark: #217dbb;
+    --bg-light: #f4f6f9;
+    --card-bg: #ffffff;
+    --border: #e1e5eb;
+    --text-dark: #2c3e50;
+    --text-medium: #5f6c7b;
+  }
+
+  * {
+    margin: 0; padding: 0;
+    box-sizing: border-box;
+    font-family: "Inter", system-ui, sans-serif;
+  }
+
+  body {
+    background: var(--bg-light);
+    color: var(--text-dark);
+  }
+
+  .container {
+    max-width: 1300px;
+    margin: auto;
+    padding: 25px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+
+  header h1 {
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .subtitle {
+    color: var(--text-medium);
+    margin-top: 6px;
+    font-size: 1.1rem;
+  }
+
+  .nav {
+    display: flex;
+    gap: 20px;
+    margin: 22px 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+  }
+  .nav a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    padding: 6px 12px;
+    border-radius: 6px;
+  }
+  .nav a.active {
+    background: var(--primary);
+    color: white;
+  }
+
+  .controls {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+  }
+
+  #searchBox {
+    padding: 10px;
+    width: 250px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.95rem;
+  }
+
+  .download-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .download-btn:hover { background: var(--primary-dark); }
+
+  /* TABLE */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 10px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  }
+
+  thead th {
+    background: var(--primary);
+    color: white;
+    padding: 14px;
+    font-size: 0.95rem;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    cursor: pointer;
+  }
+
+  tbody tr:nth-child(even) { background: #f9fbfd; }
+  tbody tr:hover { background: #eef5ff; }
+
+  td {
+    padding: 14px;
+    font-size: 0.92rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Badges */
+  .badge-transform {
+    background: #ecf5ff;
+    color: #1673c4;
+    padding: 3px 7px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .badge-source {
+    background: #fff4e5;
+    padding: 3px 7px;
+    border-radius: 6px;
+    color: #b06a00;
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  code {
+    background: #f0f3f7;
+    padding: 3px 6px;
+    border-radius: 4px;
+  }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>📊 Mapping Matrix</h1>
+    <p class="subtitle">Complete view of all column-level mappings</p>
+  </header>
+
+  <nav class="nav">
+    <a href="index.html">Home</a>
+    <a href="lineage.html">Lineage</a>
+    <a href="mapping-matrix.html" class="active">Mapping Matrix</a>
+  </nav>
+
+  <div class="controls">
+    <input type="text" id="searchBox" placeholder="Search...">
+    <button class="download-btn" onclick="downloadCSV()">⬇ Download CSV</button>
+  </div>
+
+  <table id="matrixTable">
+    <thead>
+      <tr>
+        <th>Target</th>
+        <th>Source</th>
+        <th>Path</th>
+        <th>Transform</th>
+        <th>Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+</div>
+
+<script>
+const MAPPINGS = ${mappingData};
+
+document.getElementById("searchBox").addEventListener("input", function () {
+  const value = this.value.toLowerCase();
+  document.querySelectorAll("#matrixTable tbody tr").forEach(row => {
+    row.style.display = row.innerText.toLowerCase().includes(value) ? "" : "none";
+  });
+});
+
+// SORTING
+document.querySelectorAll("th").forEach((th, index) => {
+  th.addEventListener("click", () => sortTable(index));
+});
+
+function sortTable(colIndex) {
+  const table = document.getElementById("matrixTable");
+  const rows = Array.from(table.rows).slice(1);
+  let sorted = rows.sort((a, b) =>
+    a.cells[colIndex].innerText.localeCompare(b.cells[colIndex].innerText)
+  );
+  sorted.forEach(row => table.tBodies[0].appendChild(row));
+}
+
+// CSV DOWNLOAD - generate from AST mappings (clean values, proper escaping)
+function downloadCSV() {
+  let csv = "Target,Source,Path,Transform,Description\\n";
+
+  MAPPINGS.forEach(m => {
+    const row = [
+      m.target,
+      m.from.source_id,
+      m.from.path || "-",
+      m.from.transform || "-",
+      m.description || "-"
+    ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',');
+
+    csv += row + "\\n";
+  });
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "mapping-matrix.csv";
+  a.click();
+}
+</script>
+
+</body>
+</html>
+`;
+
+    fs.writeFileSync(path.join(outputDir, 'mapping-matrix.html'), html);
+  }
+
   private generateTablePage(ast: Project, target: any, table: Table, outputDir: string): void {
     const mappings = this.getTableMappings(ast, target, table);
 
@@ -127,6 +389,7 @@ export class HTMLGenerator {
     <nav class="nav">
       <a href="index.html">Home</a>
       <a href="lineage.html">Lineage</a>
+      <a href="mapping-matrix.html">Mapping Matrix</a>
     </nav>
 
     ${table.description ? `
@@ -240,6 +503,8 @@ export class HTMLGenerator {
     <nav class="nav">
       <a href="index.html">Home</a>
       <a href="lineage.html" class="active">Lineage</a>
+      <a href="mapping-matrix.html">Mapping Matrix</a>
+
     </nav>
 
     <section>
