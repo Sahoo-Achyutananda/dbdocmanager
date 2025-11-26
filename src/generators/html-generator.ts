@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Project, Table, Column, Mapping, Source } from '../types/ast';
+import { ERGenerator } from './er-generator';
 
 export class HTMLGenerator {
   generate(ast: Project, outputDir: string): void {
@@ -20,6 +21,7 @@ export class HTMLGenerator {
     this.generateLineagePage(ast, outputDir);
     this.generateLineageGraphData(ast, outputDir); // Backend data
     this.generateLineageGraphPage(ast, outputDir); // Frontend graph
+    this.generateERDAssets(ast, outputDir);
 
     console.log(`✓ Generated Interactive Lineage Graph in ${outputDir}`);
   }
@@ -58,6 +60,9 @@ export class HTMLGenerator {
           <span class="nav-header">Overview</span>
           <a href="index.html" class="nav-item ${activeLink === 'home' ? 'active' : ''}">
              <span class="icon">🏠</span> Dashboard
+          </a>
+          <a href="erd.html" class="nav-item ${activeLink === 'erd' ? 'active' : ''}">
+              <span class="icon">📐</span> ER Diagram
           </a>
           <a href="lineage.html" class="nav-item ${activeLink === 'lineage-table' ? 'active' : ''}">
              <span class="icon">🔢</span> Lineage Matrix
@@ -745,5 +750,551 @@ export class HTMLGenerator {
 
   private getTableFileName(db: string, table: string): string {
     return `table_${db}_${table}.html`;
+  }
+
+
+  private generateERDAssets(ast: Project, outputDir: string): void {
+    // 1. Generate the Mermaid .mmd file first
+    const erGen = new ERGenerator();
+    const mermaidCode = erGen.generateMermaidCode(ast);
+    fs.writeFileSync(path.join(outputDir, 'schema.mmd'), mermaidCode);
+    
+    const content = `
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.4.1/backbone-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.5/joint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/graphlib/2.1.8/graphlib.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.5/joint.min.css" />
+
+    <style>
+        /* YOUR EXACT CSS */
+        #toolbar {
+            /* Position changed from fixed to relative to fit inside the dashboard layout */
+            margin-bottom: 20px;
+            z-index: 100;
+            background: white; 
+            padding: 12px; 
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+            border: 1px solid #e1e4e8;
+            display: flex; 
+            gap: 12px; 
+            align-items: center;
+        }
+        
+        .er-button { 
+            padding: 8px 14px; 
+            cursor: pointer; 
+            background: #fff; 
+            border: 1px solid #d1d5da; 
+            border-radius: 6px; 
+            font-weight: 600; 
+            font-size: 13px; 
+            color: #24292e;
+        }
+        
+        .er-button:hover { 
+            background: #f6f8fa; 
+        }
+        
+        .btn-primary { 
+            background: #0969da; 
+            color: white; 
+            border: 1px solid #0969da; 
+        }
+        
+        .btn-primary:hover { 
+            background: #0356b6; 
+        }
+        
+        .file-upload { 
+            position: relative; 
+            overflow: hidden; 
+            display: inline-block; 
+        }
+        
+        .file-upload input[type=file] { 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            opacity: 0; 
+            width: 100%; 
+            height: 100%; 
+            cursor: pointer; 
+        }
+
+        #paper-container { 
+            width: 100%; 
+            height: 85vh; /* Adjusted from 100vh to fit sidebar layout */
+            overflow: hidden; 
+            cursor: grab; 
+            background-color: #ffffff;
+            border: 1px solid #e1e4e8; /* Added border for clarity */
+        }
+        
+        #paper-container.grabbing { 
+            cursor: grabbing; 
+        }
+    </style>
+
+    <div id="toolbar">
+        <div class="file-upload">
+            <button class="er-button btn-primary">📂 Load .mmd File</button>
+            <input type="file" id="file-input" accept=".mmd,.txt">
+        </div>
+        <button class="er-button" id="btn-zoom-in">Zoom In</button>
+        <button class="er-button" id="btn-zoom-out">Zoom Out</button>
+        <button class="er-button" id="btn-fit">Fit to Screen</button>
+    </div>
+
+    <div id="paper-container">
+        <div id="paper"></div>
+    </div>
+
+    <script>
+        const HEADER_HEIGHT = 45;
+        const ROW_HEIGHT = 26;
+        const PADDING_TOP = 18;
+        const PADDING_BOTTOM = 18;
+
+        const namespace = joint.shapes;
+        const graph = new joint.dia.Graph({}, { cellNamespace: namespace });
+        
+        const paper = new joint.dia.Paper({
+            el: document.getElementById('paper'),
+            model: graph,
+            width: 4000,
+            height: 4000,
+            gridSize: 10,
+            drawGrid: false,
+            background: { color: 'transparent' },
+            cellViewNamespace: namespace,
+            interactive: true,
+            async: true,
+            frozen: true
+        });
+
+        // Define custom table shape with grid lines
+        joint.shapes.standard.Rectangle.define('app.ERTable', {
+            attrs: {
+                body: { 
+                    fill: '#ffffff', 
+                    stroke: '#d0d7de', 
+                    strokeWidth: 2
+                }
+            }
+        });
+
+        // Parser
+        function parseMermaid(text) {
+            const entities = {};
+            const relationships = [];
+            const lines = text.split('\\n'); // ESCAPED FOR TS
+            let currentEntity = null;
+
+            lines.forEach((line, index) => {
+                line = line.trim();
+                
+                if(!line || line.startsWith('%%') || line.startsWith('erDiagram')) {
+                    return;
+                }
+
+                // Parse relationship (REGEX ESCAPED FOR TS STRING)
+                const relMatch = line.match(/^(\\w+)\\s+([\\|\\}o\\{][|\\-o\\{]{2,}[\\|\\}o\\{])\\s+(\\w+)\\s*:\\s*(.+)$/);
+                if(relMatch) {
+                    const rel = { 
+                        from: relMatch[1], 
+                        to: relMatch[3], 
+                        card: relMatch[2], 
+                        label: relMatch[4].replace(/"/g, '').trim()
+                    };
+                    relationships.push(rel);
+                    return; 
+                }
+
+                // Parse entity start (REGEX ESCAPED)
+                const entStart = line.match(/^(\\w+)\\s*\\{$/);
+                if(entStart) {
+                    currentEntity = entStart[1];
+                    entities[currentEntity] = { name: currentEntity, attributes: [] };
+                    return;
+                }
+                
+                // Parse entity end
+                if(line === '}') { 
+                    currentEntity = null; 
+                    return; 
+                }
+
+                // Parse attributes (REGEX ESCAPED)
+                if(currentEntity) {
+                    const attr = line.match(/^(\\S+)\\s+(\\S+)\\s*(.*)$/);
+                    if(attr) {
+                        entities[currentEntity].attributes.push({ 
+                            type: attr[1], 
+                            name: attr[2], 
+                            constraint: attr[3] || '' 
+                        });
+                    }
+                }
+            });
+            
+            return { entities, relationships };
+        }
+
+        // Build graph
+        function buildGraph(data) {
+            graph.clear();
+            const cells = [];
+            const entityMap = {};
+
+            // Build tables
+            Object.values(data.entities).forEach(ent => {
+                
+                // Calculate column widths based on content
+                let maxTypeLen = 0;
+                let maxNameLen = 0;
+                let maxConstraintLen = 0;
+                
+                ent.attributes.forEach(attr => {
+                    maxTypeLen = Math.max(maxTypeLen, attr.type.length);
+                    maxNameLen = Math.max(maxNameLen, attr.name.length);
+                    maxConstraintLen = Math.max(maxConstraintLen, (attr.constraint || '').length);
+                });
+                
+                // Calculate column widths dynamically (char width ~8px for monospace)
+                const typeColWidth = Math.max(60, maxTypeLen * 8 + 16);
+                const nameColWidth = Math.max(100, maxNameLen * 8 + 16);
+                const constraintColWidth = Math.max(45, maxConstraintLen * 8 + 16);
+                const totalWidth = typeColWidth + nameColWidth + constraintColWidth;
+                
+                // Calculate header width based on entity name
+                const minWidthForHeader = ent.name.length * 10 + 40;
+                const finalWidth = Math.max(totalWidth, minWidthForHeader);
+                
+                const headerHeight = 40;
+                const rowHeight = 32;
+                const rowCount = ent.attributes.length;
+                const totalHeight = headerHeight + (rowCount * rowHeight);
+
+                // Create base rectangle
+                const el = new joint.shapes.app.ERTable();
+                el.resize(finalWidth, totalHeight);
+                el.position(0, 0);
+                el.set('id', ent.name);
+
+                // Create custom markup with all grid lines and text
+                const markup = [];
+                const attrs = {};
+
+                // Body rectangle
+                markup.push({ tagName: 'rect', selector: 'body' });
+                attrs.body = {
+                    width: finalWidth,
+                    height: totalHeight,
+                    fill: '#ffffff',
+                    stroke: '#d0d7de',
+                    strokeWidth: 2
+                };
+
+                // Header rectangle
+                markup.push({ tagName: 'rect', selector: 'header' });
+                attrs.header = {
+                    width: finalWidth,
+                    height: headerHeight,
+                    fill: '#0969da',
+                    stroke: '#0969da',
+                    strokeWidth: 2
+                };
+
+                // Header text
+                markup.push({ tagName: 'text', selector: 'headerText' });
+                attrs.headerText = {
+                    text: ent.name,
+                    x: finalWidth / 2,
+                    y: headerHeight / 2,
+                    textAnchor: 'middle',
+                    textVerticalAnchor: 'middle',
+                    fill: '#ffffff',
+                    fontSize: 15,
+                    fontWeight: '600',
+                    fontFamily: 'Segoe UI, sans-serif'
+                };
+
+                // Vertical lines (adjust if width changed)
+                const adjustedTypeColWidth = (typeColWidth / totalWidth) * finalWidth;
+                const adjustedNameColEnd = adjustedTypeColWidth + ((nameColWidth / totalWidth) * finalWidth);
+                
+                markup.push({ tagName: 'line', selector: 'vline1' });
+                attrs.vline1 = {
+                    x1: adjustedTypeColWidth,
+                    y1: headerHeight,
+                    x2: adjustedTypeColWidth,
+                    y2: totalHeight,
+                    stroke: '#d0d7de',
+                    strokeWidth: 1
+                };
+
+                markup.push({ tagName: 'line', selector: 'vline2' });
+                attrs.vline2 = {
+                    x1: adjustedNameColEnd,
+                    y1: headerHeight,
+                    x2: adjustedNameColEnd,
+                    y2: totalHeight,
+                    stroke: '#d0d7de',
+                    strokeWidth: 1
+                };
+
+                // Horizontal lines and row content
+                ent.attributes.forEach((attr, index) => {
+                    const y = headerHeight + (index * rowHeight);
+                    
+                    // Horizontal line
+                    if (index > 0) {
+                        markup.push({ tagName: 'line', selector: 'hline' + index });
+                        attrs['hline' + index] = {
+                            x1: 0,
+                            y1: y,
+                            x2: finalWidth,
+                            y2: y,
+                            stroke: '#d0d7de',
+                            strokeWidth: 1
+                        };
+                    }
+
+                    // Type text
+                    markup.push({ tagName: 'text', selector: 'type' + index });
+                    attrs['type' + index] = {
+                        text: attr.type,
+                        x: 8,
+                        y: y + rowHeight / 2,
+                        textAnchor: 'start',
+                        textVerticalAnchor: 'middle',
+                        fill: '#6e7781',
+                        fontSize: 12,
+                        fontFamily: 'Consolas, Monaco, monospace'
+                    };
+
+                    // Name text
+                    markup.push({ tagName: 'text', selector: 'name' + index });
+                    attrs['name' + index] = {
+                        text: attr.name,
+                        x: adjustedTypeColWidth + 8,
+                        y: y + rowHeight / 2,
+                        textAnchor: 'start',
+                        textVerticalAnchor: 'middle',
+                        fill: '#24292f',
+                        fontSize: 12,
+                        fontWeight: '500',
+                        fontFamily: 'Consolas, Monaco, monospace'
+                    };
+
+                    // Constraint text
+                    if (attr.constraint) {
+                        markup.push({ tagName: 'text', selector: 'constraint' + index });
+                        attrs['constraint' + index] = {
+                            text: attr.constraint,
+                            x: adjustedNameColEnd + ((finalWidth - adjustedNameColEnd) / 2),
+                            y: y + rowHeight / 2,
+                            textAnchor: 'middle',
+                            textVerticalAnchor: 'middle',
+                            fill: '#6e7781',
+                            fontSize: 11,
+                            fontFamily: 'Consolas, Monaco, monospace'
+                        };
+                    }
+                });
+
+                el.set('markup', markup);
+                el.attr(attrs);
+
+                cells.push(el);
+                entityMap[ent.name] = el;
+            });
+
+            // Build links
+            data.relationships.forEach(rel => {
+                
+                const source = entityMap[rel.from];
+                const target = entityMap[rel.to];
+                
+                if(!source || !target) {
+                    return;
+                }
+
+                const link = new joint.shapes.standard.Link({
+                    source: { id: source.id },
+                    target: { id: target.id },
+                    router: { name: 'normal' },
+                    connector: { name: 'rounded', args: { radius: 10 } },
+                    attrs: {
+                        line: { 
+                            stroke: '#0969da', 
+                            strokeWidth: 3,
+                            strokeDasharray: '0'
+                        }
+                    }
+                });
+
+                // Add label
+                if(rel.label) {
+                    link.appendLabel({
+                        attrs: {
+                            text: { 
+                                text: rel.label, 
+                                fill: '#0969da', 
+                                fontSize: 14, 
+                                fontWeight: 'bold'
+                            },
+                            rect: { 
+                                fill: 'white', 
+                                stroke: '#0969da', 
+                                strokeWidth: 2, 
+                                rx: 4, 
+                                ry: 4,
+                                ref: 'text',
+                                refWidth: '150%',
+                                refHeight: '150%',
+                                refX: '-25%',
+                                refY: '-25%'
+                            }
+                        },
+                        position: {
+                            distance: 0.5
+                        }
+                    });
+                }
+                
+                cells.push(link);
+            });
+
+            graph.resetCells(cells);
+            layoutGraph();
+        }
+
+        // Layout
+        function layoutGraph() {
+            const g = new dagre.graphlib.Graph();
+            g.setGraph({ 
+                rankdir: 'LR',
+                nodesep: 80,
+                ranksep: 120,
+                marginx: 50, 
+                marginy: 50 
+            });
+            g.setDefaultEdgeLabel(() => ({}));
+
+            graph.getElements().forEach(el => {
+                g.setNode(el.id, { width: el.size().width, height: el.size().height });
+            });
+            
+            graph.getLinks().forEach(link => {
+                g.setEdge(link.source().id, link.target().id);
+            });
+
+            dagre.layout(g);
+
+            graph.getElements().forEach(el => {
+                const node = g.node(el.id);
+                el.position(node.x - node.width / 2, node.y - node.height / 2);
+            });
+            
+            paper.unfreeze();
+            
+            // Auto fit to screen with more aggressive zoom
+            setTimeout(() => {
+                paper.scaleContentToFit({ 
+                    padding: 40, 
+                    maxScale: 1,
+                    minScale: 0.1,
+                    useModelGeometry: true
+                });
+            }, 150);
+        }
+
+        // Load default - MODIFIED TO LOAD THE GENERATED FILE AUTOMATICALLY
+        async function loadDefault() {
+            try {
+                // Changed from 'diagram.mmd' to 'schema.mmd'
+                const response = await fetch('schema.mmd');
+                if (response.ok) {
+                    const text = await response.text();
+                    paper.freeze();
+                    const parsed = parseMermaid(text);
+                    buildGraph(parsed);
+                    return;
+                }
+            } catch (error) {
+                console.error("Could not load schema.mmd", error);
+            }
+        }
+
+        // File upload
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                paper.freeze();
+                const parsed = parseMermaid(e.target.result);
+                buildGraph(parsed);
+            };
+            reader.readAsText(file);
+        });
+
+        // Zoom buttons
+        let scale = 1;
+        document.getElementById('btn-zoom-in').onclick = () => { 
+            scale += 0.1; 
+            paper.scale(scale); 
+        };
+        document.getElementById('btn-zoom-out').onclick = () => { 
+            scale = Math.max(0.1, scale - 0.1); 
+            paper.scale(scale); 
+        };
+        document.getElementById('btn-fit').onclick = () => { 
+            paper.scaleContentToFit({ 
+                padding: 40, 
+                maxScale: 1,
+                minScale: 0.1,
+                useModelGeometry: true
+            }); 
+        };
+
+        // Panning
+        let panning = false;
+        let panStart = {x:0, y:0};
+        const container = document.getElementById('paper-container');
+        
+        paper.on('blank:pointerdown', (evt) => {
+            panning = true;
+            panStart = { x: evt.clientX, y: evt.clientY };
+            container.classList.add('grabbing');
+        });
+        
+        document.addEventListener('mousemove', (evt) => {
+            if(!panning) return;
+            const dx = evt.clientX - panStart.x;
+            const dy = evt.clientY - panStart.y;
+            panStart = { x: evt.clientX, y: evt.clientY };
+            const current = paper.translate();
+            paper.translate(current.tx + dx, current.ty + dy);
+        });
+        
+        document.addEventListener('mouseup', () => { 
+            panning = false; 
+            container.classList.remove('grabbing'); 
+        });
+
+        loadDefault();
+    </script>
+    `;
+
+    fs.writeFileSync(
+        path.join(outputDir, 'erd.html'), 
+        this.getPageLayout(ast, 'ER Diagram', content, 'erd')
+    );
   }
 }
