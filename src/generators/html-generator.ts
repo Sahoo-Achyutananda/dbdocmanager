@@ -751,14 +751,16 @@ export class HTMLGenerator {
   private getTableFileName(db: string, table: string): string {
     return `table_${db}_${table}.html`;
   }
-
-
+  
   private generateERDAssets(ast: Project, outputDir: string): void {
-    // 1. Generate the Mermaid .mmd file first
+    // 1. Generate the Mermaid string from the AST
     const erGen = new ERGenerator();
     const mermaidCode = erGen.generateMermaidCode(ast);
-    fs.writeFileSync(path.join(outputDir, 'schema.mmd'), mermaidCode);
     
+    // 2. Save the physical file (as a backup/download option)
+    fs.writeFileSync(path.join(outputDir, 'schema.mmd'), mermaidCode);
+
+    // 3. The HTML Content
     const content = `
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
@@ -769,13 +771,31 @@ export class HTMLGenerator {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.5/joint.min.css" />
 
     <style>
-        /* YOUR EXACT CSS */
+        /* SCALED DOWN BODY STYLES TO FIT CONTAINER */
+        #er-wrapper * {
+            box-sizing: border-box;
+        }
+        
+        #er-wrapper { 
+            margin: 0; 
+            padding: 0;
+            overflow: hidden; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background: #f6f8fa;
+            width: 100%;
+            height: 85vh; /* Adjusted to fit dashboard */
+            position: relative;
+            border-radius: 8px;
+            border: 1px solid #e1e4e8;
+        }
+        
         #toolbar {
-            /* Position changed from fixed to relative to fit inside the dashboard layout */
-            margin-bottom: 20px;
-            z-index: 100;
+            position: absolute; /* Changed from fixed to absolute for dashboard containment */
+            top: 20px; 
+            left: 20px; 
+            z-index: 1000;
             background: white; 
-            padding: 12px; 
+            padding: 12px 16px; 
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
             border: 1px solid #e1e4e8;
@@ -784,8 +804,8 @@ export class HTMLGenerator {
             align-items: center;
         }
         
-        .er-button { 
-            padding: 8px 14px; 
+        #toolbar button { 
+            padding: 8px 16px; 
             cursor: pointer; 
             background: #fff; 
             border: 1px solid #d1d5da; 
@@ -793,20 +813,28 @@ export class HTMLGenerator {
             font-weight: 600; 
             font-size: 13px; 
             color: #24292e;
+            transition: all 0.2s;
+            font-family: inherit;
         }
         
-        .er-button:hover { 
+        #toolbar button:hover { 
             background: #f6f8fa; 
+            border-color: #8c959f;
         }
         
-        .btn-primary { 
+        #toolbar button:active {
+            transform: scale(0.98);
+        }
+        
+        #toolbar .btn-primary { 
             background: #0969da; 
             color: white; 
             border: 1px solid #0969da; 
         }
         
-        .btn-primary:hover { 
-            background: #0356b6; 
+        #toolbar .btn-primary:hover { 
+            background: #0356b6;
+            border-color: #0356b6; 
         }
         
         .file-upload { 
@@ -827,37 +855,53 @@ export class HTMLGenerator {
 
         #paper-container { 
             width: 100%; 
-            height: 85vh; /* Adjusted from 100vh to fit sidebar layout */
+            height: 100%; 
             overflow: hidden; 
             cursor: grab; 
-            background-color: #ffffff;
-            border: 1px solid #e1e4e8; /* Added border for clarity */
+            background-color: #f6f8fa;
+            position: relative;
         }
         
         #paper-container.grabbing { 
             cursor: grabbing; 
         }
+
+        #paper {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Make link labels non-interactive */
+        .joint-link-label {
+            pointer-events: none !important;
+        }
+
+        .joint-link .label-rect {
+            pointer-events: none !important;
+        }
     </style>
 
-    <div id="toolbar">
-        <div class="file-upload">
-            <button class="er-button btn-primary">📂 Load .mmd File</button>
-            <input type="file" id="file-input" accept=".mmd,.txt">
+    <div id="er-wrapper">
+        <div id="toolbar">
+            <div class="file-upload">
+                <button class="btn-primary">📂 Load .mmd File</button>
+                <input type="file" id="file-input" accept=".mmd,.txt">
+            </div>
+            <button id="btn-zoom-in">🔍 Zoom In</button>
+            <button id="btn-zoom-out">🔎 Zoom Out</button>
+            <button id="btn-fit">⊡ Fit to Screen</button>
+            <button id="btn-reset">↻ Reset View</button>
+             <a href="schema.mmd" download style="margin-left:10px; font-size:12px; color:#0969da; text-decoration:none;">Download .mmd</a>
         </div>
-        <button class="er-button" id="btn-zoom-in">Zoom In</button>
-        <button class="er-button" id="btn-zoom-out">Zoom Out</button>
-        <button class="er-button" id="btn-fit">Fit to Screen</button>
-    </div>
 
-    <div id="paper-container">
-        <div id="paper"></div>
+        <div id="paper-container">
+            <div id="paper"></div>
+        </div>
     </div>
 
     <script>
-        const HEADER_HEIGHT = 45;
-        const ROW_HEIGHT = 26;
-        const PADDING_TOP = 18;
-        const PADDING_BOTTOM = 18;
+        // --- INJECTED DATA: This allows the diagram to load instantly without fetch errors ---
+        const embeddedMermaid = ${JSON.stringify(mermaidCode)};
 
         const namespace = joint.shapes;
         const graph = new joint.dia.Graph({}, { cellNamespace: namespace });
@@ -865,56 +909,79 @@ export class HTMLGenerator {
         const paper = new joint.dia.Paper({
             el: document.getElementById('paper'),
             model: graph,
-            width: 4000,
-            height: 4000,
-            gridSize: 10,
+            width: 5000,
+            height: 5000,
+            gridSize: 1,
             drawGrid: false,
             background: { color: 'transparent' },
             cellViewNamespace: namespace,
-            interactive: true,
+            interactive: function(cellView) {
+                if (cellView.model.isLink()) {
+                    // Links are completely non-interactive
+                    return false;
+                }
+                // Elements (tables) are draggable
+                return true;
+            },
             async: true,
-            frozen: true
+            frozen: true,
+            linkPinning: false,
+            defaultLink: function() {
+                return new joint.shapes.standard.Link();
+            }
         });
 
-        // Define custom table shape with grid lines
+        // Helper function to measure text width accurately
+        function measureText(text, fontSize, fontWeight, fontFamily) {
+            if (!text) return 0;
+            const canvas = measureText.canvas || (measureText.canvas = document.createElement('canvas'));
+            const context = canvas.getContext('2d');
+            context.font = \`\${fontWeight} \${fontSize}px \${fontFamily}\`;
+            return context.measureText(text).width;
+        }
+
+        // Define custom table shape
         joint.shapes.standard.Rectangle.define('app.ERTable', {
             attrs: {
                 body: { 
                     fill: '#ffffff', 
-                    stroke: '#d0d7de', 
-                    strokeWidth: 2
+                    stroke: '#e1e4e8', 
+                    strokeWidth: 1,
+                    rx: 6,
+                    ry: 6
                 }
             }
         });
 
-        // Parser
+        // Enhanced parser with better error handling
         function parseMermaid(text) {
             const entities = {};
             const relationships = [];
-            const lines = text.split('\\n'); // ESCAPED FOR TS
+            // TS ESCAPE: split('\\n')
+            const lines = text.split('\\n');
             let currentEntity = null;
 
-            lines.forEach((line, index) => {
+            lines.forEach((line, lineNum) => {
                 line = line.trim();
                 
                 if(!line || line.startsWith('%%') || line.startsWith('erDiagram')) {
                     return;
                 }
 
-                // Parse relationship (REGEX ESCAPED FOR TS STRING)
-                const relMatch = line.match(/^(\\w+)\\s+([\\|\\}o\\{][|\\-o\\{]{2,}[\\|\\}o\\{])\\s+(\\w+)\\s*:\\s*(.+)$/);
+                // Parse relationship - improved regex
+                // TS ESCAPE: Double backslashes for regex string definition
+                const relMatch = line.match(/^(\\w+)\\s+([\\|\\}o\\{][|\\-o\\{]{2,}[\\|\\}o\\{])\\s+(\\w+)\\s*:\\s*"?([^"]+)"?$/);
                 if(relMatch) {
-                    const rel = { 
+                    relationships.push({ 
                         from: relMatch[1], 
                         to: relMatch[3], 
                         card: relMatch[2], 
-                        label: relMatch[4].replace(/"/g, '').trim()
-                    };
-                    relationships.push(rel);
+                        label: relMatch[4].trim()
+                    });
                     return; 
                 }
 
-                // Parse entity start (REGEX ESCAPED)
+                // Parse entity start
                 const entStart = line.match(/^(\\w+)\\s*\\{$/);
                 if(entStart) {
                     currentEntity = entStart[1];
@@ -928,14 +995,30 @@ export class HTMLGenerator {
                     return; 
                 }
 
-                // Parse attributes (REGEX ESCAPED)
+                // Parse attributes - handles multiple quoted strings
                 if(currentEntity) {
-                    const attr = line.match(/^(\\S+)\\s+(\\S+)\\s*(.*)$/);
-                    if(attr) {
+                    const quotes = [];
+                    let quoteMatch;
+                    const quoteRegex = /"([^"]*)"/g;
+                    while ((quoteMatch = quoteRegex.exec(line)) !== null) {
+                        quotes.push(quoteMatch[1]);
+                    }
+
+                    const cleanLine = line.replace(/"[^"]*"/g, '').trim();
+                    // TS ESCAPE: split(/\\s+/)
+                    const parts = cleanLine.split(/\\s+/).filter(p => p);
+
+                    if(parts.length >= 2) {
+                        const type = parts[0];
+                        const name = parts[1];
+                        const constraint = quotes[0] || '';
+                        const description = quotes[1] || '';
+
                         entities[currentEntity].attributes.push({ 
-                            type: attr[1], 
-                            name: attr[2], 
-                            constraint: attr[3] || '' 
+                            type: type, 
+                            name: name, 
+                            constraint: constraint,
+                            description: description
                         });
                     }
                 }
@@ -944,165 +1027,268 @@ export class HTMLGenerator {
             return { entities, relationships };
         }
 
-        // Build graph
+        // Build graph with robust sizing
         function buildGraph(data) {
             graph.clear();
             const cells = [];
             const entityMap = {};
 
-            // Build tables
             Object.values(data.entities).forEach(ent => {
+                // Measure actual text widths
+                const headerTextWidth = measureText(ent.name, 16, '600', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
                 
-                // Calculate column widths based on content
-                let maxTypeLen = 0;
-                let maxNameLen = 0;
-                let maxConstraintLen = 0;
+                let maxNameWidth = Math.max(100, headerTextWidth);
+                let maxTypeWidth = 60;
+                let maxConstraintWidth = 0;
+                let maxDescWidth = 0;
+                let hasDescription = false;
                 
                 ent.attributes.forEach(attr => {
-                    maxTypeLen = Math.max(maxTypeLen, attr.type.length);
-                    maxNameLen = Math.max(maxNameLen, attr.name.length);
-                    maxConstraintLen = Math.max(maxConstraintLen, (attr.constraint || '').length);
+                    const nameWidth = measureText(attr.name, 13, '500', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
+                    const typeWidth = measureText(attr.type, 12, 'normal', 'Consolas, Monaco, monospace');
+                    
+                    let constraintWidth = 0;
+                    if (attr.constraint) {
+                        const badges = attr.constraint.split(',').map(s => s.trim()).filter(s => s);
+                        badges.forEach(badge => {
+                            constraintWidth += badge.length * 7 + 18;
+                        });
+                    }
+                    
+                    let descWidth = 0;
+                    if (attr.description) {
+                        hasDescription = true;
+                        descWidth = measureText(attr.description, 11, 'normal', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
+                    }
+                    
+                    maxNameWidth = Math.max(maxNameWidth, nameWidth);
+                    maxTypeWidth = Math.max(maxTypeWidth, typeWidth);
+                    maxConstraintWidth = Math.max(maxConstraintWidth, constraintWidth);
+                    maxDescWidth = Math.max(maxDescWidth, descWidth);
                 });
                 
-                // Calculate column widths dynamically (char width ~8px for monospace)
-                const typeColWidth = Math.max(60, maxTypeLen * 8 + 16);
-                const nameColWidth = Math.max(100, maxNameLen * 8 + 16);
-                const constraintColWidth = Math.max(45, maxConstraintLen * 8 + 16);
-                const totalWidth = typeColWidth + nameColWidth + constraintColWidth;
+                // Calculate column widths with padding
+                const nameColWidth = Math.max(160, maxNameWidth + 40 + maxConstraintWidth + 20);
+                const typeColWidth = Math.max(110, maxTypeWidth + 30);
+                const descColWidth = hasDescription ? Math.max(180, Math.min(450, maxDescWidth + 40)) : 0;
                 
-                // Calculate header width based on entity name
-                const minWidthForHeader = ent.name.length * 10 + 40;
-                const finalWidth = Math.max(totalWidth, minWidthForHeader);
+                const totalWidth = nameColWidth + typeColWidth + descColWidth;
                 
-                const headerHeight = 40;
-                const rowHeight = 32;
-                const rowCount = ent.attributes.length;
+                const headerHeight = 45;
+                const rowHeight = 38;
+                const rowCount = Math.max(1, ent.attributes.length);
                 const totalHeight = headerHeight + (rowCount * rowHeight);
 
-                // Create base rectangle
                 const el = new joint.shapes.app.ERTable();
-                el.resize(finalWidth, totalHeight);
+                el.resize(totalWidth, totalHeight);
                 el.position(0, 0);
                 el.set('id', ent.name);
 
-                // Create custom markup with all grid lines and text
                 const markup = [];
                 const attrs = {};
 
-                // Body rectangle
+                // Body rectangle with shadow
                 markup.push({ tagName: 'rect', selector: 'body' });
                 attrs.body = {
-                    width: finalWidth,
+                    width: totalWidth,
                     height: totalHeight,
                     fill: '#ffffff',
                     stroke: '#d0d7de',
-                    strokeWidth: 2
+                    strokeWidth: 1.5,
+                    rx: 8,
+                    ry: 8,
+                    filter: { name: 'dropShadow', args: { dx: 0, dy: 3, blur: 12, opacity: 0.15 } }
                 };
 
-                // Header rectangle
+                // Header background
                 markup.push({ tagName: 'rect', selector: 'header' });
                 attrs.header = {
-                    width: finalWidth,
+                    width: totalWidth,
                     height: headerHeight,
-                    fill: '#0969da',
-                    stroke: '#0969da',
-                    strokeWidth: 2
+                    fill: '#f6f8fa',
+                    stroke: 'none',
+                    rx: 8,
+                    ry: 8
+                };
+
+                // Header clip to prevent overflow
+                markup.push({ tagName: 'rect', selector: 'headerClip' });
+                attrs.headerClip = {
+                    width: totalWidth,
+                    height: headerHeight - 1,
+                    fill: '#f6f8fa',
+                    stroke: 'none',
+                    rx: 0,
+                    ry: 0
+                };
+
+                // Header bottom border
+                markup.push({ tagName: 'line', selector: 'headerBorder' });
+                attrs.headerBorder = {
+                    x1: 0,
+                    y1: headerHeight,
+                    x2: totalWidth,
+                    y2: headerHeight,
+                    stroke: '#d0d7de',
+                    strokeWidth: 1.5
                 };
 
                 // Header text
                 markup.push({ tagName: 'text', selector: 'headerText' });
                 attrs.headerText = {
                     text: ent.name,
-                    x: finalWidth / 2,
+                    x: 16,
                     y: headerHeight / 2,
-                    textAnchor: 'middle',
+                    textAnchor: 'start',
                     textVerticalAnchor: 'middle',
-                    fill: '#ffffff',
-                    fontSize: 15,
-                    fontWeight: '600',
-                    fontFamily: 'Segoe UI, sans-serif'
+                    fill: '#0969da',
+                    fontSize: 16,
+                    fontWeight: '700',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
                 };
 
-                // Vertical lines (adjust if width changed)
-                const adjustedTypeColWidth = (typeColWidth / totalWidth) * finalWidth;
-                const adjustedNameColEnd = adjustedTypeColWidth + ((nameColWidth / totalWidth) * finalWidth);
-                
+                // Vertical line between name and type
                 markup.push({ tagName: 'line', selector: 'vline1' });
                 attrs.vline1 = {
-                    x1: adjustedTypeColWidth,
+                    x1: nameColWidth,
                     y1: headerHeight,
-                    x2: adjustedTypeColWidth,
+                    x2: nameColWidth,
                     y2: totalHeight,
                     stroke: '#d0d7de',
                     strokeWidth: 1
                 };
 
-                markup.push({ tagName: 'line', selector: 'vline2' });
-                attrs.vline2 = {
-                    x1: adjustedNameColEnd,
-                    y1: headerHeight,
-                    x2: adjustedNameColEnd,
-                    y2: totalHeight,
-                    stroke: '#d0d7de',
-                    strokeWidth: 1
-                };
+                // Vertical line between type and description
+                if(descColWidth > 0) {
+                    markup.push({ tagName: 'line', selector: 'vline2' });
+                    attrs.vline2 = {
+                        x1: nameColWidth + typeColWidth,
+                        y1: headerHeight,
+                        x2: nameColWidth + typeColWidth,
+                        y2: totalHeight,
+                        stroke: '#d0d7de',
+                        strokeWidth: 1
+                    };
+                }
 
-                // Horizontal lines and row content
+                // Rows
                 ent.attributes.forEach((attr, index) => {
                     const y = headerHeight + (index * rowHeight);
                     
                     // Horizontal line
                     if (index > 0) {
-                        markup.push({ tagName: 'line', selector: 'hline' + index });
-                        attrs['hline' + index] = {
+                        markup.push({ tagName: 'line', selector: \`hline\${index}\` });
+                        attrs[\`hline\${index}\`] = {
                             x1: 0,
                             y1: y,
-                            x2: finalWidth,
+                            x2: totalWidth,
                             y2: y,
-                            stroke: '#d0d7de',
+                            stroke: '#eaeef2',
                             strokeWidth: 1
                         };
                     }
 
-                    // Type text
-                    markup.push({ tagName: 'text', selector: 'type' + index });
-                    attrs['type' + index] = {
-                        text: attr.type,
-                        x: 8,
-                        y: y + rowHeight / 2,
-                        textAnchor: 'start',
-                        textVerticalAnchor: 'middle',
-                        fill: '#6e7781',
-                        fontSize: 12,
-                        fontFamily: 'Consolas, Monaco, monospace'
-                    };
+                    // Constraint badges
+                    if (attr.constraint) {
+                        const badges = attr.constraint.split(',').map(s => s.trim()).filter(s => s);
+                        
+                        let badgeX = nameColWidth - 12;
+                        badges.reverse().forEach((badge, bIndex) => {
+                            const badgeWidth = badge.length * 7 + 12;
+                            badgeX -= badgeWidth;
+                            
+                            let badgeColor = '#f0f0f0';
+                            let textColor = '#666';
+                            
+                            if(badge.includes('PK')) {
+                                badgeColor = '#ffd7d7';
+                                textColor = '#d32f2f';
+                            } else if(badge.includes('FK')) {
+                                badgeColor = '#e3f2fd';
+                                textColor = '#1565c0';
+                            } else if(badge.includes('UK') || badge.includes('UNIQUE')) {
+                                badgeColor = '#fff3e0';
+                                textColor = '#ef6c00';
+                            } else if(badge.includes('NOT NULL')) {
+                                badgeColor = '#e8f5e9';
+                                textColor = '#2e7d32';
+                            }
+                            
+                            // Badge background
+                            markup.push({ tagName: 'rect', selector: \`constraintBg\${index}_\${bIndex}\` });
+                            attrs[\`constraintBg\${index}_\${bIndex}\`] = {
+                                x: badgeX,
+                                y: y + rowHeight / 2 - 9,
+                                width: badgeWidth,
+                                height: 18,
+                                fill: badgeColor,
+                                stroke: 'none',
+                                rx: 3,
+                                ry: 3
+                            };
+                            
+                            // Badge text
+                            markup.push({ tagName: 'text', selector: \`constraint\${index}_\${bIndex}\` });
+                            attrs[\`constraint\${index}_\${bIndex}\`] = {
+                                text: badge,
+                                x: badgeX + badgeWidth / 2,
+                                y: y + rowHeight / 2,
+                                textAnchor: 'middle',
+                                textVerticalAnchor: 'middle',
+                                fill: textColor,
+                                fontSize: 10,
+                                fontWeight: '700',
+                                fontFamily: 'Consolas, Monaco, monospace'
+                            };
+                            
+                            badgeX -= 6;
+                        });
+                    }
 
-                    // Name text
-                    markup.push({ tagName: 'text', selector: 'name' + index });
-                    attrs['name' + index] = {
+                    // Attribute name
+                    markup.push({ tagName: 'text', selector: \`name\${index}\` });
+                    attrs[\`name\${index}\`] = {
                         text: attr.name,
-                        x: adjustedTypeColWidth + 8,
+                        x: 16,
                         y: y + rowHeight / 2,
                         textAnchor: 'start',
                         textVerticalAnchor: 'middle',
                         fill: '#24292f',
+                        fontSize: 13,
+                        fontWeight: '600',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+                    };
+
+                    // Type
+                    markup.push({ tagName: 'text', selector: \`type\${index}\` });
+                    attrs[\`type\${index}\`] = {
+                        text: attr.type,
+                        x: nameColWidth + 12,
+                        y: y + rowHeight / 2,
+                        textAnchor: 'start',
+                        textVerticalAnchor: 'middle',
+                        fill: '#57606a',
                         fontSize: 12,
-                        fontWeight: '500',
                         fontFamily: 'Consolas, Monaco, monospace'
                     };
 
-                    // Constraint text
-                    if (attr.constraint) {
-                        markup.push({ tagName: 'text', selector: 'constraint' + index });
-                        attrs['constraint' + index] = {
-                            text: attr.constraint,
-                            x: adjustedNameColEnd + ((finalWidth - adjustedNameColEnd) / 2),
+                    // Description
+                    if(attr.description && descColWidth > 0) {
+                        const maxDescChars = Math.floor((descColWidth - 30) / 6);
+                        const descText = attr.description.length > maxDescChars 
+                            ? attr.description.substring(0, maxDescChars - 3) + '...' 
+                            : attr.description;
+                        
+                        markup.push({ tagName: 'text', selector: \`desc\${index}\` });
+                        attrs[\`desc\${index}\`] = {
+                            text: descText,
+                            x: nameColWidth + typeColWidth + 12,
                             y: y + rowHeight / 2,
-                            textAnchor: 'middle',
+                            textAnchor: 'start',
                             textVerticalAnchor: 'middle',
-                            fill: '#6e7781',
+                            fill: '#656d76',
                             fontSize: 11,
-                            fontFamily: 'Consolas, Monaco, monospace'
+                            fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
                         };
                     }
                 });
@@ -1114,55 +1300,90 @@ export class HTMLGenerator {
                 entityMap[ent.name] = el;
             });
 
-            // Build links
+            // Build links with fixed labels
+            const linkColors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+            let colorIndex = 0;
+
             data.relationships.forEach(rel => {
-                
                 const source = entityMap[rel.from];
                 const target = entityMap[rel.to];
                 
                 if(!source || !target) {
+                    console.warn(\`Relationship references non-existent table: \${rel.from} -> \${rel.to}\`);
                     return;
                 }
+
+                const linkColor = linkColors[colorIndex % linkColors.length];
+                colorIndex++;
 
                 const link = new joint.shapes.standard.Link({
                     source: { id: source.id },
                     target: { id: target.id },
-                    router: { name: 'normal' },
-                    connector: { name: 'rounded', args: { radius: 10 } },
+                    router: { 
+                        name: 'manhattan', 
+                        args: { 
+                            step: 15,
+                            padding: 20
+                        } 
+                    },
+                    connector: { 
+                        name: 'rounded', 
+                        args: { 
+                            radius: 12 
+                        } 
+                    },
                     attrs: {
                         line: { 
-                            stroke: '#0969da', 
-                            strokeWidth: 3,
-                            strokeDasharray: '0'
+                            stroke: linkColor, 
+                            strokeWidth: 2.5,
+                            strokeDasharray: '0',
+                            targetMarker: {
+                                type: 'path',
+                                d: 'M 10 -5 0 0 10 5 z',
+                                fill: linkColor,
+                                stroke: linkColor
+                            }
                         }
                     }
                 });
 
-                // Add label
+                // Add FIXED label
                 if(rel.label) {
                     link.appendLabel({
                         attrs: {
                             text: { 
                                 text: rel.label, 
-                                fill: '#0969da', 
-                                fontSize: 14, 
-                                fontWeight: 'bold'
+                                fill: linkColor, 
+                                fontSize: 12, 
+                                fontWeight: '700',
+                                fontFamily: '-apple-system, sans-serif',
+                                pointerEvents: 'none'
                             },
                             rect: { 
                                 fill: 'white', 
-                                stroke: '#0969da', 
+                                stroke: linkColor, 
                                 strokeWidth: 2, 
-                                rx: 4, 
-                                ry: 4,
+                                rx: 6, 
+                                ry: 6,
                                 ref: 'text',
                                 refWidth: '150%',
-                                refHeight: '150%',
+                                refHeight: '180%',
                                 refX: '-25%',
-                                refY: '-25%'
+                                refY: '-40%',
+                                pointerEvents: 'none'
                             }
                         },
+                        position: { 
+                            distance: 0.5,
+                            offset: 0
+                        }
+                    });
+
+                    // Make label completely non-movable
+                    link.label(0, {
                         position: {
-                            distance: 0.5
+                            distance: 0.5,
+                            offset: 0
                         }
                     });
                 }
@@ -1174,98 +1395,149 @@ export class HTMLGenerator {
             layoutGraph();
         }
 
-        // Layout
+        // Layout with dagre
         function layoutGraph() {
             const g = new dagre.graphlib.Graph();
             g.setGraph({ 
                 rankdir: 'LR',
-                nodesep: 80,
-                ranksep: 120,
-                marginx: 50, 
-                marginy: 50 
+                nodesep: 100,
+                ranksep: 180,
+                marginx: 80, 
+                marginy: 80,
+                edgesep: 30
             });
             g.setDefaultEdgeLabel(() => ({}));
 
             graph.getElements().forEach(el => {
-                g.setNode(el.id, { width: el.size().width, height: el.size().height });
+                g.setNode(el.id, { 
+                    width: el.size().width, 
+                    height: el.size().height 
+                });
             });
             
             graph.getLinks().forEach(link => {
-                g.setEdge(link.source().id, link.target().id);
+                const sourceId = link.source().id;
+                const targetId = link.target().id;
+                if (sourceId && targetId) {
+                    g.setEdge(sourceId, targetId);
+                }
             });
 
             dagre.layout(g);
 
             graph.getElements().forEach(el => {
                 const node = g.node(el.id);
-                el.position(node.x - node.width / 2, node.y - node.height / 2);
+                if (node) {
+                    el.position(node.x - node.width / 2, node.y - node.height / 2);
+                }
             });
             
             paper.unfreeze();
             
-            // Auto fit to screen with more aggressive zoom
             setTimeout(() => {
-                paper.scaleContentToFit({ 
-                    padding: 40, 
-                    maxScale: 1,
-                    minScale: 0.1,
-                    useModelGeometry: true
-                });
-            }, 150);
+                fitToScreen();
+            }, 100);
         }
 
-        // Load default - MODIFIED TO LOAD THE GENERATED FILE AUTOMATICALLY
-        async function loadDefault() {
+        // Fit to screen function
+        function fitToScreen() {
             try {
-                // Changed from 'diagram.mmd' to 'schema.mmd'
-                const response = await fetch('schema.mmd');
-                if (response.ok) {
-                    const text = await response.text();
-                    paper.freeze();
-                    const parsed = parseMermaid(text);
-                    buildGraph(parsed);
-                    return;
-                }
-            } catch (error) {
-                console.error("Could not load schema.mmd", error);
+                paper.scaleContentToFit({ 
+                    padding: 60, 
+                    maxScale: 1.2,
+                    minScale: 0.05,
+                    useModelGeometry: true
+                });
+                scale = paper.scale().sx;
+            } catch (e) {
+                console.error('Error fitting to screen:', e);
             }
         }
 
-        // File upload
+        // Load default or from file
+        function loadDefault() {
+            try {
+                // MODIFIED: Use the injected variable instead of fetch
+                if (embeddedMermaid) {
+                    paper.freeze();
+                    const parsed = parseMermaid(embeddedMermaid);
+                    buildGraph(parsed);
+                } else {
+                    // Fallback to sample
+                    const sampleMMD = \`erDiagram
+    dim_customers {
+        INTEGER customer_id "PK, AUTO_INCREMENT" "Surrogate key for customer dimension"
+        VARCHAR(255) email "UK, NOT NULL" "Primary email address normalized to lowercase"
+        VARCHAR(200) full_name "NOT NULL" "Customer full name first and last"
+        VARCHAR(500) address_street "" "Street address"
+        VARCHAR(100) address_city "" "City"
+        VARCHAR(20) postal_code "" "ZIP or Postal code"
+    }
+    fact_orders {
+        INTEGER order_id "PK, AUTO_INCREMENT" "Unique order identifier"
+        INTEGER customer_id "FK, NOT NULL" "Foreign key to dim_customers"
+        TIMESTAMP order_date "NOT NULL" "Order placement date"
+        DECIMAL(10,2) total_amount "NOT NULL" "Total order amount in USD"
+        VARCHAR(50) status "NOT NULL" "Order status pending completed cancelled"
+    }
+    dim_customers ||--o{ fact_orders : "fk_orders_customer"\`;
+            
+                    paper.freeze();
+                    const parsed = parseMermaid(sampleMMD);
+                    buildGraph(parsed);
+                }
+            } catch (error) {
+                console.log('Error loading diagram', error);
+            }
+        }
+
+        // File upload handler
         document.getElementById('file-input').addEventListener('change', function(e) {
             const file = e.target.files[0];
             if(!file) return;
+            
             const reader = new FileReader();
             reader.onload = (e) => {
-                paper.freeze();
-                const parsed = parseMermaid(e.target.result);
-                buildGraph(parsed);
+                try {
+                    paper.freeze();
+                    const parsed = parseMermaid(e.target.result);
+                    buildGraph(parsed);
+                } catch (error) {
+                    console.error('Error parsing file:', error);
+                    alert('Error parsing .mmd file. Please check the format.');
+                }
+            };
+            reader.onerror = () => {
+                alert('Error reading file');
             };
             reader.readAsText(file);
         });
 
-        // Zoom buttons
+        // Zoom controls
         let scale = 1;
+        
         document.getElementById('btn-zoom-in').onclick = () => { 
-            scale += 0.1; 
-            paper.scale(scale); 
+            scale = Math.min(3, scale + 0.15); 
+            paper.scale(scale, scale);
         };
+        
         document.getElementById('btn-zoom-out').onclick = () => { 
-            scale = Math.max(0.1, scale - 0.1); 
-            paper.scale(scale); 
+            scale = Math.max(0.1, scale - 0.15); 
+            paper.scale(scale, scale);
         };
+        
         document.getElementById('btn-fit').onclick = () => { 
-            paper.scaleContentToFit({ 
-                padding: 40, 
-                maxScale: 1,
-                minScale: 0.1,
-                useModelGeometry: true
-            }); 
+            fitToScreen();
         };
 
-        // Panning
+        document.getElementById('btn-reset').onclick = () => {
+            paper.translate(0, 0);
+            fitToScreen();
+        };
+
+        // Panning functionality
         let panning = false;
-        let panStart = {x:0, y:0};
+        let panStart = {x: 0, y: 0};
         const container = document.getElementById('paper-container');
         
         paper.on('blank:pointerdown', (evt) => {
@@ -1288,6 +1560,20 @@ export class HTMLGenerator {
             container.classList.remove('grabbing'); 
         });
 
+        // Mouse wheel zoom
+        container.addEventListener('wheel', (evt) => {
+            evt.preventDefault();
+            const delta = evt.deltaY > 0 ? -0.1 : 0.1;
+            scale = Math.max(0.1, Math.min(3, scale + delta));
+            paper.scale(scale, scale);
+        }, { passive: false });
+
+        // Prevent text selection while dragging
+        document.addEventListener('selectstart', (e) => {
+            if (panning) e.preventDefault();
+        });
+
+        // Initialize
         loadDefault();
     </script>
     `;
