@@ -288,15 +288,14 @@ node dist/cli.js validate examples/sample-schema.json
 - [x] CLI interface
 
 ### 🚧 Phase 2
-- [ ] YAML support
 - [ ] ERD diagram generation (Mermaid)
 - [ ] Interactive lineage graph (Cytoscape)
 - [ ] Array explosion documentation
 - [ ] Database introspection tool
 
 ### 🔮 Phase 3
-- [ ] Web-based DSL editor
-- [ ] Real-time validation
-- [ ] Markdown export
-- [ ] CI/CD integration examples
-- [ ] Transform library
+- [ ] Web-based DSL editor - maybe
+- [ ] Real-time validation -maybe
+- [ ] Markdown export -maybe
+- [ ] CI/CD integration examples -maybe
+- [ ] Transform library -maybe
