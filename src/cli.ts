@@ -1,5 +1,4 @@
-// src/cli.ts
-// #!/usr/bin/env node
+#!/usr/bin/env node
 
 import { Command } from 'commander';
 import chalk from 'chalk';
