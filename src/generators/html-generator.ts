@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Project, Table, Column, Mapping, Source } from '../types/ast';
+import { ERGenerator } from './er-generator';
 
 export class HTMLGenerator {
   generate(ast: Project, outputDir: string): void {
@@ -20,6 +21,7 @@ export class HTMLGenerator {
     this.generateLineagePage(ast, outputDir);
     this.generateLineageGraphData(ast, outputDir); // Backend data
     this.generateLineageGraphPage(ast, outputDir); // Frontend graph
+    this.generateERDAssets(ast, outputDir);
 
     // Generate mapping matrix page
     this.generateMappingMatrixPage(ast, outputDir);
@@ -61,6 +63,9 @@ export class HTMLGenerator {
           <span class="nav-header">Overview</span>
           <a href="index.html" class="nav-item ${activeLink === 'home' ? 'active' : ''}">
              <span class="icon">🏠</span> Dashboard
+          </a>
+          <a href="erd.html" class="nav-item ${activeLink === 'erd' ? 'active' : ''}">
+              <span class="icon">📐</span> ER Diagram
           </a>
           <a href="lineage.html" class="nav-item ${activeLink === 'lineage-table' ? 'active' : ''}">
              <span class="icon">🔢</span> Lineage Matrix
@@ -1005,5 +1010,837 @@ function downloadCSV() {
 
   private getTableFileName(db: string, table: string): string {
     return `table_${db}_${table}.html`;
+  }
+  
+  private generateERDAssets(ast: Project, outputDir: string): void {
+    // 1. Generate the Mermaid string from the AST
+    const erGen = new ERGenerator();
+    const mermaidCode = erGen.generateMermaidCode(ast);
+    
+    // 2. Save the physical file (as a backup/download option)
+    fs.writeFileSync(path.join(outputDir, 'schema.mmd'), mermaidCode);
+
+    // 3. The HTML Content
+    const content = `
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.4.1/backbone-min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.5/joint.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/graphlib/2.1.8/graphlib.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.5/joint.min.css" />
+
+    <style>
+        /* SCALED DOWN BODY STYLES TO FIT CONTAINER */
+        #er-wrapper * {
+            box-sizing: border-box;
+        }
+        
+        #er-wrapper { 
+            margin: 0; 
+            padding: 0;
+            overflow: hidden; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            background: #f6f8fa;
+            width: 100%;
+            height: 85vh; /* Adjusted to fit dashboard */
+            position: relative;
+            border-radius: 8px;
+            border: 1px solid #e1e4e8;
+        }
+        
+        #toolbar {
+            position: absolute; /* Changed from fixed to absolute for dashboard containment */
+            top: 20px; 
+            left: 20px; 
+            z-index: 1000;
+            background: white; 
+            padding: 12px 16px; 
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
+            border: 1px solid #e1e4e8;
+            display: flex; 
+            gap: 12px; 
+            align-items: center;
+        }
+        
+        #toolbar button { 
+            padding: 8px 16px; 
+            cursor: pointer; 
+            background: #fff; 
+            border: 1px solid #d1d5da; 
+            border-radius: 6px; 
+            font-weight: 600; 
+            font-size: 13px; 
+            color: #24292e;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        
+        #toolbar button:hover { 
+            background: #f6f8fa; 
+            border-color: #8c959f;
+        }
+        
+        #toolbar button:active {
+            transform: scale(0.98);
+        }
+        
+        #toolbar .btn-primary { 
+            background: #0969da; 
+            color: white; 
+            border: 1px solid #0969da; 
+        }
+        
+        #toolbar .btn-primary:hover { 
+            background: #0356b6;
+            border-color: #0356b6; 
+        }
+        
+        .file-upload { 
+            position: relative; 
+            overflow: hidden; 
+            display: inline-block; 
+        }
+        
+        .file-upload input[type=file] { 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            opacity: 0; 
+            width: 100%; 
+            height: 100%; 
+            cursor: pointer; 
+        }
+
+        #paper-container { 
+            width: 100%; 
+            height: 100%; 
+            overflow: hidden; 
+            cursor: grab; 
+            background-color: #f6f8fa;
+            position: relative;
+        }
+        
+        #paper-container.grabbing { 
+            cursor: grabbing; 
+        }
+
+        #paper {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Make link labels non-interactive */
+        .joint-link-label {
+            pointer-events: none !important;
+        }
+
+        .joint-link .label-rect {
+            pointer-events: none !important;
+        }
+    </style>
+
+    <div id="er-wrapper">
+        <div id="toolbar">
+            <div class="file-upload">
+                <button class="btn-primary">📂 Load .mmd File</button>
+                <input type="file" id="file-input" accept=".mmd,.txt">
+            </div>
+            <button id="btn-zoom-in">🔍 Zoom In</button>
+            <button id="btn-zoom-out">🔎 Zoom Out</button>
+            <button id="btn-fit">⊡ Fit to Screen</button>
+            <button id="btn-reset">↻ Reset View</button>
+             <a href="schema.mmd" download style="margin-left:10px; font-size:12px; color:#0969da; text-decoration:none;">Download .mmd</a>
+        </div>
+
+        <div id="paper-container">
+            <div id="paper"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- INJECTED DATA: This allows the diagram to load instantly without fetch errors ---
+        const embeddedMermaid = ${JSON.stringify(mermaidCode)};
+
+        const namespace = joint.shapes;
+        const graph = new joint.dia.Graph({}, { cellNamespace: namespace });
+        
+        const paper = new joint.dia.Paper({
+            el: document.getElementById('paper'),
+            model: graph,
+            width: 5000,
+            height: 5000,
+            gridSize: 1,
+            drawGrid: false,
+            background: { color: 'transparent' },
+            cellViewNamespace: namespace,
+            interactive: function(cellView) {
+                if (cellView.model.isLink()) {
+                    // Links are completely non-interactive
+                    return false;
+                }
+                // Elements (tables) are draggable
+                return true;
+            },
+            async: true,
+            frozen: true,
+            linkPinning: false,
+            defaultLink: function() {
+                return new joint.shapes.standard.Link();
+            }
+        });
+
+        // Helper function to measure text width accurately
+        function measureText(text, fontSize, fontWeight, fontFamily) {
+            if (!text) return 0;
+            const canvas = measureText.canvas || (measureText.canvas = document.createElement('canvas'));
+            const context = canvas.getContext('2d');
+            context.font = \`\${fontWeight} \${fontSize}px \${fontFamily}\`;
+            return context.measureText(text).width;
+        }
+
+        // Define custom table shape
+        joint.shapes.standard.Rectangle.define('app.ERTable', {
+            attrs: {
+                body: { 
+                    fill: '#ffffff', 
+                    stroke: '#e1e4e8', 
+                    strokeWidth: 1,
+                    rx: 6,
+                    ry: 6
+                }
+            }
+        });
+
+        // Enhanced parser with better error handling
+        function parseMermaid(text) {
+            const entities = {};
+            const relationships = [];
+            // TS ESCAPE: split('\\n')
+            const lines = text.split('\\n');
+            let currentEntity = null;
+
+            lines.forEach((line, lineNum) => {
+                line = line.trim();
+                
+                if(!line || line.startsWith('%%') || line.startsWith('erDiagram')) {
+                    return;
+                }
+
+                // Parse relationship - improved regex
+                // TS ESCAPE: Double backslashes for regex string definition
+                const relMatch = line.match(/^(\\w+)\\s+([\\|\\}o\\{][|\\-o\\{]{2,}[\\|\\}o\\{])\\s+(\\w+)\\s*:\\s*"?([^"]+)"?$/);
+                if(relMatch) {
+                    relationships.push({ 
+                        from: relMatch[1], 
+                        to: relMatch[3], 
+                        card: relMatch[2], 
+                        label: relMatch[4].trim()
+                    });
+                    return; 
+                }
+
+                // Parse entity start
+                const entStart = line.match(/^(\\w+)\\s*\\{$/);
+                if(entStart) {
+                    currentEntity = entStart[1];
+                    entities[currentEntity] = { name: currentEntity, attributes: [] };
+                    return;
+                }
+                
+                // Parse entity end
+                if(line === '}') { 
+                    currentEntity = null; 
+                    return; 
+                }
+
+                // Parse attributes - handles multiple quoted strings
+                if(currentEntity) {
+                    const quotes = [];
+                    let quoteMatch;
+                    const quoteRegex = /"([^"]*)"/g;
+                    while ((quoteMatch = quoteRegex.exec(line)) !== null) {
+                        quotes.push(quoteMatch[1]);
+                    }
+
+                    const cleanLine = line.replace(/"[^"]*"/g, '').trim();
+                    // TS ESCAPE: split(/\\s+/)
+                    const parts = cleanLine.split(/\\s+/).filter(p => p);
+
+                    if(parts.length >= 2) {
+                        const type = parts[0];
+                        const name = parts[1];
+                        const constraint = quotes[0] || '';
+                        const description = quotes[1] || '';
+
+                        entities[currentEntity].attributes.push({ 
+                            type: type, 
+                            name: name, 
+                            constraint: constraint,
+                            description: description
+                        });
+                    }
+                }
+            });
+            
+            return { entities, relationships };
+        }
+
+        // Build graph with robust sizing
+        function buildGraph(data) {
+            graph.clear();
+            const cells = [];
+            const entityMap = {};
+
+            Object.values(data.entities).forEach(ent => {
+                // Measure actual text widths
+                const headerTextWidth = measureText(ent.name, 16, '600', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
+                
+                let maxNameWidth = Math.max(100, headerTextWidth);
+                let maxTypeWidth = 60;
+                let maxConstraintWidth = 0;
+                let maxDescWidth = 0;
+                let hasDescription = false;
+                
+                ent.attributes.forEach(attr => {
+                    const nameWidth = measureText(attr.name, 13, '500', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
+                    const typeWidth = measureText(attr.type, 12, 'normal', 'Consolas, Monaco, monospace');
+                    
+                    let constraintWidth = 0;
+                    if (attr.constraint) {
+                        const badges = attr.constraint.split(',').map(s => s.trim()).filter(s => s);
+                        badges.forEach(badge => {
+                            constraintWidth += badge.length * 7 + 18;
+                        });
+                    }
+                    
+                    let descWidth = 0;
+                    if (attr.description) {
+                        hasDescription = true;
+                        descWidth = measureText(attr.description, 11, 'normal', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
+                    }
+                    
+                    maxNameWidth = Math.max(maxNameWidth, nameWidth);
+                    maxTypeWidth = Math.max(maxTypeWidth, typeWidth);
+                    maxConstraintWidth = Math.max(maxConstraintWidth, constraintWidth);
+                    maxDescWidth = Math.max(maxDescWidth, descWidth);
+                });
+                
+                // Calculate column widths with padding
+                const nameColWidth = Math.max(160, maxNameWidth + 40 + maxConstraintWidth + 20);
+                const typeColWidth = Math.max(110, maxTypeWidth + 30);
+                const descColWidth = hasDescription ? Math.max(180, Math.min(450, maxDescWidth + 40)) : 0;
+                
+                const totalWidth = nameColWidth + typeColWidth + descColWidth;
+                
+                const headerHeight = 45;
+                const rowHeight = 38;
+                const rowCount = Math.max(1, ent.attributes.length);
+                const totalHeight = headerHeight + (rowCount * rowHeight);
+
+                const el = new joint.shapes.app.ERTable();
+                el.resize(totalWidth, totalHeight);
+                el.position(0, 0);
+                el.set('id', ent.name);
+
+                const markup = [];
+                const attrs = {};
+
+                // Body rectangle with shadow
+                markup.push({ tagName: 'rect', selector: 'body' });
+                attrs.body = {
+                    width: totalWidth,
+                    height: totalHeight,
+                    fill: '#ffffff',
+                    stroke: '#d0d7de',
+                    strokeWidth: 1.5,
+                    rx: 8,
+                    ry: 8,
+                    filter: { name: 'dropShadow', args: { dx: 0, dy: 3, blur: 12, opacity: 0.15 } }
+                };
+
+                // Header background
+                markup.push({ tagName: 'rect', selector: 'header' });
+                attrs.header = {
+                    width: totalWidth,
+                    height: headerHeight,
+                    fill: '#f6f8fa',
+                    stroke: 'none',
+                    rx: 8,
+                    ry: 8
+                };
+
+                // Header clip to prevent overflow
+                markup.push({ tagName: 'rect', selector: 'headerClip' });
+                attrs.headerClip = {
+                    width: totalWidth,
+                    height: headerHeight - 1,
+                    fill: '#f6f8fa',
+                    stroke: 'none',
+                    rx: 0,
+                    ry: 0
+                };
+
+                // Header bottom border
+                markup.push({ tagName: 'line', selector: 'headerBorder' });
+                attrs.headerBorder = {
+                    x1: 0,
+                    y1: headerHeight,
+                    x2: totalWidth,
+                    y2: headerHeight,
+                    stroke: '#d0d7de',
+                    strokeWidth: 1.5
+                };
+
+                // Header text
+                markup.push({ tagName: 'text', selector: 'headerText' });
+                attrs.headerText = {
+                    text: ent.name,
+                    x: 16,
+                    y: headerHeight / 2,
+                    textAnchor: 'start',
+                    textVerticalAnchor: 'middle',
+                    fill: '#0969da',
+                    fontSize: 16,
+                    fontWeight: '700',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+                };
+
+                // Vertical line between name and type
+                markup.push({ tagName: 'line', selector: 'vline1' });
+                attrs.vline1 = {
+                    x1: nameColWidth,
+                    y1: headerHeight,
+                    x2: nameColWidth,
+                    y2: totalHeight,
+                    stroke: '#d0d7de',
+                    strokeWidth: 1
+                };
+
+                // Vertical line between type and description
+                if(descColWidth > 0) {
+                    markup.push({ tagName: 'line', selector: 'vline2' });
+                    attrs.vline2 = {
+                        x1: nameColWidth + typeColWidth,
+                        y1: headerHeight,
+                        x2: nameColWidth + typeColWidth,
+                        y2: totalHeight,
+                        stroke: '#d0d7de',
+                        strokeWidth: 1
+                    };
+                }
+
+                // Rows
+                ent.attributes.forEach((attr, index) => {
+                    const y = headerHeight + (index * rowHeight);
+                    
+                    // Horizontal line
+                    if (index > 0) {
+                        markup.push({ tagName: 'line', selector: \`hline\${index}\` });
+                        attrs[\`hline\${index}\`] = {
+                            x1: 0,
+                            y1: y,
+                            x2: totalWidth,
+                            y2: y,
+                            stroke: '#eaeef2',
+                            strokeWidth: 1
+                        };
+                    }
+
+                    // Constraint badges
+                    if (attr.constraint) {
+                        const badges = attr.constraint.split(',').map(s => s.trim()).filter(s => s);
+                        
+                        let badgeX = nameColWidth - 12;
+                        badges.reverse().forEach((badge, bIndex) => {
+                            const badgeWidth = badge.length * 7 + 12;
+                            badgeX -= badgeWidth;
+                            
+                            let badgeColor = '#f0f0f0';
+                            let textColor = '#666';
+                            
+                            if(badge.includes('PK')) {
+                                badgeColor = '#ffd7d7';
+                                textColor = '#d32f2f';
+                            } else if(badge.includes('FK')) {
+                                badgeColor = '#e3f2fd';
+                                textColor = '#1565c0';
+                            } else if(badge.includes('UK') || badge.includes('UNIQUE')) {
+                                badgeColor = '#fff3e0';
+                                textColor = '#ef6c00';
+                            } else if(badge.includes('NOT NULL')) {
+                                badgeColor = '#e8f5e9';
+                                textColor = '#2e7d32';
+                            }
+                            
+                            // Badge background
+                            markup.push({ tagName: 'rect', selector: \`constraintBg\${index}_\${bIndex}\` });
+                            attrs[\`constraintBg\${index}_\${bIndex}\`] = {
+                                x: badgeX,
+                                y: y + rowHeight / 2 - 9,
+                                width: badgeWidth,
+                                height: 18,
+                                fill: badgeColor,
+                                stroke: 'none',
+                                rx: 3,
+                                ry: 3
+                            };
+                            
+                            // Badge text
+                            markup.push({ tagName: 'text', selector: \`constraint\${index}_\${bIndex}\` });
+                            attrs[\`constraint\${index}_\${bIndex}\`] = {
+                                text: badge,
+                                x: badgeX + badgeWidth / 2,
+                                y: y + rowHeight / 2,
+                                textAnchor: 'middle',
+                                textVerticalAnchor: 'middle',
+                                fill: textColor,
+                                fontSize: 10,
+                                fontWeight: '700',
+                                fontFamily: 'Consolas, Monaco, monospace'
+                            };
+                            
+                            badgeX -= 6;
+                        });
+                    }
+
+                    // Attribute name
+                    markup.push({ tagName: 'text', selector: \`name\${index}\` });
+                    attrs[\`name\${index}\`] = {
+                        text: attr.name,
+                        x: 16,
+                        y: y + rowHeight / 2,
+                        textAnchor: 'start',
+                        textVerticalAnchor: 'middle',
+                        fill: '#24292f',
+                        fontSize: 13,
+                        fontWeight: '600',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+                    };
+
+                    // Type
+                    markup.push({ tagName: 'text', selector: \`type\${index}\` });
+                    attrs[\`type\${index}\`] = {
+                        text: attr.type,
+                        x: nameColWidth + 12,
+                        y: y + rowHeight / 2,
+                        textAnchor: 'start',
+                        textVerticalAnchor: 'middle',
+                        fill: '#57606a',
+                        fontSize: 12,
+                        fontFamily: 'Consolas, Monaco, monospace'
+                    };
+
+                    // Description
+                    if(attr.description && descColWidth > 0) {
+                        const maxDescChars = Math.floor((descColWidth - 30) / 6);
+                        const descText = attr.description.length > maxDescChars 
+                            ? attr.description.substring(0, maxDescChars - 3) + '...' 
+                            : attr.description;
+                        
+                        markup.push({ tagName: 'text', selector: \`desc\${index}\` });
+                        attrs[\`desc\${index}\`] = {
+                            text: descText,
+                            x: nameColWidth + typeColWidth + 12,
+                            y: y + rowHeight / 2,
+                            textAnchor: 'start',
+                            textVerticalAnchor: 'middle',
+                            fill: '#656d76',
+                            fontSize: 11,
+                            fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+                        };
+                    }
+                });
+
+                el.set('markup', markup);
+                el.attr(attrs);
+
+                cells.push(el);
+                entityMap[ent.name] = el;
+            });
+
+            // Build links with fixed labels
+            const linkColors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+            let colorIndex = 0;
+
+            data.relationships.forEach(rel => {
+                const source = entityMap[rel.from];
+                const target = entityMap[rel.to];
+                
+                if(!source || !target) {
+                    console.warn(\`Relationship references non-existent table: \${rel.from} -> \${rel.to}\`);
+                    return;
+                }
+
+                const linkColor = linkColors[colorIndex % linkColors.length];
+                colorIndex++;
+
+                const link = new joint.shapes.standard.Link({
+                    source: { id: source.id },
+                    target: { id: target.id },
+                    router: { 
+                        name: 'manhattan', 
+                        args: { 
+                            step: 15,
+                            padding: 20
+                        } 
+                    },
+                    connector: { 
+                        name: 'rounded', 
+                        args: { 
+                            radius: 12 
+                        } 
+                    },
+                    attrs: {
+                        line: { 
+                            stroke: linkColor, 
+                            strokeWidth: 2.5,
+                            strokeDasharray: '0',
+                            targetMarker: {
+                                type: 'path',
+                                d: 'M 10 -5 0 0 10 5 z',
+                                fill: linkColor,
+                                stroke: linkColor
+                            }
+                        }
+                    }
+                });
+
+                // Add FIXED label
+                if(rel.label) {
+                    link.appendLabel({
+                        attrs: {
+                            text: { 
+                                text: rel.label, 
+                                fill: linkColor, 
+                                fontSize: 12, 
+                                fontWeight: '700',
+                                fontFamily: '-apple-system, sans-serif',
+                                pointerEvents: 'none'
+                            },
+                            rect: { 
+                                fill: 'white', 
+                                stroke: linkColor, 
+                                strokeWidth: 2, 
+                                rx: 6, 
+                                ry: 6,
+                                ref: 'text',
+                                refWidth: '150%',
+                                refHeight: '180%',
+                                refX: '-25%',
+                                refY: '-40%',
+                                pointerEvents: 'none'
+                            }
+                        },
+                        position: { 
+                            distance: 0.5,
+                            offset: 0
+                        }
+                    });
+
+                    // Make label completely non-movable
+                    link.label(0, {
+                        position: {
+                            distance: 0.5,
+                            offset: 0
+                        }
+                    });
+                }
+                
+                cells.push(link);
+            });
+
+            graph.resetCells(cells);
+            layoutGraph();
+        }
+
+        // Layout with dagre
+        function layoutGraph() {
+            const g = new dagre.graphlib.Graph();
+            g.setGraph({ 
+                rankdir: 'LR',
+                nodesep: 100,
+                ranksep: 180,
+                marginx: 80, 
+                marginy: 80,
+                edgesep: 30
+            });
+            g.setDefaultEdgeLabel(() => ({}));
+
+            graph.getElements().forEach(el => {
+                g.setNode(el.id, { 
+                    width: el.size().width, 
+                    height: el.size().height 
+                });
+            });
+            
+            graph.getLinks().forEach(link => {
+                const sourceId = link.source().id;
+                const targetId = link.target().id;
+                if (sourceId && targetId) {
+                    g.setEdge(sourceId, targetId);
+                }
+            });
+
+            dagre.layout(g);
+
+            graph.getElements().forEach(el => {
+                const node = g.node(el.id);
+                if (node) {
+                    el.position(node.x - node.width / 2, node.y - node.height / 2);
+                }
+            });
+            
+            paper.unfreeze();
+            
+            setTimeout(() => {
+                fitToScreen();
+            }, 100);
+        }
+
+        // Fit to screen function
+        function fitToScreen() {
+            try {
+                paper.scaleContentToFit({ 
+                    padding: 60, 
+                    maxScale: 1.2,
+                    minScale: 0.05,
+                    useModelGeometry: true
+                });
+                scale = paper.scale().sx;
+            } catch (e) {
+                console.error('Error fitting to screen:', e);
+            }
+        }
+
+        // Load default or from file
+        function loadDefault() {
+            try {
+                // MODIFIED: Use the injected variable instead of fetch
+                if (embeddedMermaid) {
+                    paper.freeze();
+                    const parsed = parseMermaid(embeddedMermaid);
+                    buildGraph(parsed);
+                } else {
+                    // Fallback to sample
+                    const sampleMMD = \`erDiagram
+    dim_customers {
+        INTEGER customer_id "PK, AUTO_INCREMENT" "Surrogate key for customer dimension"
+        VARCHAR(255) email "UK, NOT NULL" "Primary email address normalized to lowercase"
+        VARCHAR(200) full_name "NOT NULL" "Customer full name first and last"
+        VARCHAR(500) address_street "" "Street address"
+        VARCHAR(100) address_city "" "City"
+        VARCHAR(20) postal_code "" "ZIP or Postal code"
+    }
+    fact_orders {
+        INTEGER order_id "PK, AUTO_INCREMENT" "Unique order identifier"
+        INTEGER customer_id "FK, NOT NULL" "Foreign key to dim_customers"
+        TIMESTAMP order_date "NOT NULL" "Order placement date"
+        DECIMAL(10,2) total_amount "NOT NULL" "Total order amount in USD"
+        VARCHAR(50) status "NOT NULL" "Order status pending completed cancelled"
+    }
+    dim_customers ||--o{ fact_orders : "fk_orders_customer"\`;
+            
+                    paper.freeze();
+                    const parsed = parseMermaid(sampleMMD);
+                    buildGraph(parsed);
+                }
+            } catch (error) {
+                console.log('Error loading diagram', error);
+            }
+        }
+
+        // File upload handler
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    paper.freeze();
+                    const parsed = parseMermaid(e.target.result);
+                    buildGraph(parsed);
+                } catch (error) {
+                    console.error('Error parsing file:', error);
+                    alert('Error parsing .mmd file. Please check the format.');
+                }
+            };
+            reader.onerror = () => {
+                alert('Error reading file');
+            };
+            reader.readAsText(file);
+        });
+
+        // Zoom controls
+        let scale = 1;
+        
+        document.getElementById('btn-zoom-in').onclick = () => { 
+            scale = Math.min(3, scale + 0.15); 
+            paper.scale(scale, scale);
+        };
+        
+        document.getElementById('btn-zoom-out').onclick = () => { 
+            scale = Math.max(0.1, scale - 0.15); 
+            paper.scale(scale, scale);
+        };
+        
+        document.getElementById('btn-fit').onclick = () => { 
+            fitToScreen();
+        };
+
+        document.getElementById('btn-reset').onclick = () => {
+            paper.translate(0, 0);
+            fitToScreen();
+        };
+
+        // Panning functionality
+        let panning = false;
+        let panStart = {x: 0, y: 0};
+        const container = document.getElementById('paper-container');
+        
+        paper.on('blank:pointerdown', (evt) => {
+            panning = true;
+            panStart = { x: evt.clientX, y: evt.clientY };
+            container.classList.add('grabbing');
+        });
+        
+        document.addEventListener('mousemove', (evt) => {
+            if(!panning) return;
+            const dx = evt.clientX - panStart.x;
+            const dy = evt.clientY - panStart.y;
+            panStart = { x: evt.clientX, y: evt.clientY };
+            const current = paper.translate();
+            paper.translate(current.tx + dx, current.ty + dy);
+        });
+        
+        document.addEventListener('mouseup', () => { 
+            panning = false; 
+            container.classList.remove('grabbing'); 
+        });
+
+        // Mouse wheel zoom
+        container.addEventListener('wheel', (evt) => {
+            evt.preventDefault();
+            const delta = evt.deltaY > 0 ? -0.1 : 0.1;
+            scale = Math.max(0.1, Math.min(3, scale + delta));
+            paper.scale(scale, scale);
+        }, { passive: false });
+
+        // Prevent text selection while dragging
+        document.addEventListener('selectstart', (e) => {
+            if (panning) e.preventDefault();
+        });
+
+        // Initialize
+        loadDefault();
+    </script>
+    `;
+
+    fs.writeFileSync(
+        path.join(outputDir, 'erd.html'), 
+        this.getPageLayout(ast, 'ER Diagram', content, 'erd')
+    );
   }
 }
