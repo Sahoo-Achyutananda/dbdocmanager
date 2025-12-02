@@ -289,11 +289,15 @@ export class HTMLGenerator {
            <h1>Data Lineage Matrix</h1>
            <p class="subtitle">Full listing of Source → Target mappings</p>
         </div>
+        <button id="download-excel" class="btn-download">
+          <span class="icon">📥</span> 
+          <span>Download Excel</span>
+        </button>
       </header>
 
       <div class="card">
         <div class="table-responsive">
-          <table class="data-table">
+          <table class="data-table" id="lineage-table">
             <thead>
               <tr>
                 <th>Target Column</th>
@@ -317,6 +321,36 @@ export class HTMLGenerator {
           </table>
         </div>
       </div>
+
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+      <script>
+        document.getElementById('download-excel').addEventListener('click', function() {
+          const data = ${JSON.stringify(ast.mappings.map(m => ({
+            'Target Column': m.target,
+            'Source': m.from.source_id,
+            'Source Path': m.from.path,
+            'Transformation': m.from.transform || '-',
+            'Notes': m.description || '-'
+          })))};
+
+          const ws = XLSX.utils.json_to_sheet(data);
+          ws['!cols'] = [
+            { wch: 40 },
+            { wch: 20 },
+            { wch: 30 },
+            { wch: 25 },
+            { wch: 50 }
+          ];
+
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Lineage Matrix');
+
+          const timestamp = new Date().toISOString().split('T')[0];
+          const filename = '${ast.project}_lineage_matrix_' + timestamp + '.xlsx';
+
+          XLSX.writeFile(wb, filename);
+        });
+      </script>
     `;
     fs.writeFileSync(path.join(outputDir, 'lineage.html'), this.getPageLayout(ast, 'Lineage', content, 'lineage-table'));
   }
@@ -547,6 +581,7 @@ export class HTMLGenerator {
         --sidebar-width: 260px;
         --primary: #1e293b;
         --accent: #7c3aed; /* Purple 600 */
+        --accent-hover: #6d28d9; /* Purple 700 */
         --accent-light: #f5f3ff; /* Purple 50 */
         --text-dark: #0f172a;
         --text-muted: #64748b;
@@ -631,7 +666,7 @@ export class HTMLGenerator {
       .bg-gradient-blob { position: fixed; top: -20%; right: -10%; width: 600px; height: 600px; background: radial-gradient(circle at center, rgba(232, 218, 255, 0.4) 0%, rgba(255, 255, 255, 0) 70%); z-index: -1; pointer-events: none; }
 
       /* COMPONENTS */
-      .page-header { margin-bottom: 2.5rem; display: flex; justify-content: space-between; align-items: start; }
+      .page-header { margin-bottom: 2.5rem; display: flex; justify-content: space-between; align-items: center; }
       h1 { font-size: 2rem; font-weight: 700; color: var(--text-dark); margin: 0.5rem 0 0 0; letter-spacing: -0.5px; }
       .subtitle { color: var(--text-muted); font-size: 1.1rem; margin-top: 0.25rem; }
       .breadcrumbs { font-size: 0.8rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; }
@@ -731,6 +766,34 @@ export class HTMLGenerator {
       .text-purple { color: var(--accent); }
       .text-muted { color: #64748b; }
       .text-dark { color: var(--text-dark); }
+
+      /* BUTTONS */
+      .btn-download {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1.5rem;
+        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        font-family: var(--font-sans);
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.3), 0 2px 4px -1px rgba(124, 58, 237, 0.15);
+        text-decoration: none;
+        letter-spacing: 0.025em;
+      }
+      .btn-download:hover {
+        background: var(--accent-hover);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(124, 58, 237, 0.3);
+      }
+      .btn-download .icon {
+        font-size: 1.1em;
+      }
     `;
   }
 

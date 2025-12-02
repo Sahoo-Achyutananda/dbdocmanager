@@ -2,7 +2,7 @@ import { Project } from '../types/ast';
 
 export class ERGenerator {
   /**
-   * Ported directly from your jsontommd.js
+   * Generates strict Mermaid ER Diagram syntax
    */
   generateMermaidCode(ast: Project): string {
     let mermaidCode = 'erDiagram\n\n';
@@ -26,30 +26,56 @@ export class ERGenerator {
     ast.targets.forEach(target => {
       target.tables.forEach(table => {
         if (table.description) {
-          mermaidCode += `  %% ${table.description}\n`;
+          // Remove newlines from description for comment
+          const safeTableDesc = table.description.replace(/\n/g, ' ');
+          mermaidCode += `  %% ${safeTableDesc}\n`;
         }
         mermaidCode += `  ${table.name} {\n`;
         
         table.columns.forEach(column => {
-          const constraints: string[] = [];
-          if (column.pk) constraints.push('PK');
-          // Check our map for FKs
-          if (foreignKeyMap.has(`${table.name}.${column.name}`)) constraints.push('FK');
-          if (column.unique) constraints.push('UK');
-          if (column.nullable === false) constraints.push('NOT NULL');
-          if (column.auto_increment) constraints.push('AUTO_INCREMENT');
+          // Separate standard Mermaid keys (PK, FK, UK) from other constraints
+          const keys: string[] = [];
+          const otherConstraints: string[] = [];
+
+          if (column.pk) keys.push('PK');
+          if (foreignKeyMap.has(`${table.name}.${column.name}`)) keys.push('FK');
+          if (column.unique) keys.push('UK');
           
-          const constraintStr = constraints.length > 0 ? `"${constraints.join(', ')}"` : '';
+          if (column.nullable === false) otherConstraints.push('NOT NULL');
+          if (column.auto_increment) otherConstraints.push('AUTO_INC');
           
-          let columnDef = `    ${column.type} ${column.name}`;
-          if (constraintStr) {
-            columnDef += ` ${constraintStr}`;
+          // Mermaid Syntax: type name [PK,FK] "comment"
+          // We must NOT quote the PK/FK part, and we must ONLY have one quoted string at the end.
+          
+          // 1. Type & Name
+          // Replace spaces in type with underscores to prevent parsing errors
+          let columnDef = `    ${column.type.replace(/\s+/g, '_')} ${column.name}`;
+          
+          // 2. Keys (PK, FK, UK) - Unquoted, comma-separated
+          if (keys.length > 0) {
+            columnDef += ` ${keys.join(',')}`;
           }
+
+          // 3. Comment (Description + Other Constraints)
+          let commentParts: string[] = [];
+          
+          // Add non-key constraints to the comment (e.g., "[NOT NULL]")
+          if (otherConstraints.length > 0) {
+            commentParts.push(`[${otherConstraints.join(', ')}]`);
+          }
+          
+          // Add user description
           if (column.description) {
-            // Clean description of quotes to prevent mermaid errors
-            const safeDesc = column.description.replace(/"/g, "'");
-            columnDef += ` "${safeDesc}"`;
+            // Escape double quotes and remove newlines
+            const safeDesc = column.description.replace(/"/g, "'").replace(/\n/g, " ");
+            commentParts.push(safeDesc);
           }
+
+          // Append combined comment if exists
+          if (commentParts.length > 0) {
+            columnDef += ` "${commentParts.join(' ')}"`;
+          }
+
           mermaidCode += columnDef + '\n';
         });
         mermaidCode += '  }\n\n';
@@ -62,7 +88,8 @@ export class ERGenerator {
         if (table.foreign_keys) {
           table.foreign_keys.forEach(fk => {
             const refTable = fk.references.table;
-            const relationship = fk.name || 'references';
+            // Sanitizing relationship label
+            const relationship = (fk.name || 'references').replace(/"/g, "'");
             mermaidCode += `  ${refTable} ||--o{ ${table.name} : "${relationship}"\n`;
           });
         }
