@@ -1,6 +1,6 @@
 {
   "name": "dbdocmanager_ssd",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Database documentation and lineage tool using a JSON-based DSL. Generate beautiful docs, ER diagrams, and data lineage graphs.",
   "main": "dist/cli.js",
   "types": "dist/cli.d.ts",
