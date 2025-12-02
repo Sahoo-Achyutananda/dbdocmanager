@@ -541,64 +541,63 @@ function downloadCSV() {
     fs.writeFileSync(path.join(outputDir, fileName), this.getPageLayout(ast, table.name, content, table.name));
   }
 
-  private generateLineagePage(ast: Project, outputDir: string): void {
+private generateLineagePage(ast: Project, outputDir: string): void {
     // 1. Get unique source IDs for the dropdown filter
     const uniqueSources = Array.from(new Set(ast.mappings.map(m => m.from.source_id))).sort();
 
+    // --- NEW: GENERATE PHYSICAL CSV FILE ---
+    const csvHeader = 'Target Column,Source,Source Path,Transformation,Notes\n';
+    const csvRows = ast.mappings.map(m => {
+      // Escape quotes by doubling them, wrap fields in quotes
+      const target = `"${m.target.replace(/"/g, '""')}"`;
+      const source = `"${m.from.source_id.replace(/"/g, '""')}"`;
+      const path = `"${(m.from.path || '').replace(/"/g, '""')}"`;
+      const transform = `"${(m.from.transform || '-').replace(/"/g, '""')}"`;
+      const notes = `"${(m.description || '-').replace(/"/g, '""')}"`;
+      return `${target},${source},${path},${transform},${notes}`;
+    }).join('\n');
+
+    const csvContent = csvHeader + csvRows;
+    fs.writeFileSync(path.join(outputDir, 'lineage.csv'), csvContent);
+    // ---------------------------------------
+
     const content = `
       <style>
-        /* Specific Styles for the Search Box to match the Theme */
-        .search-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%); /* White to Light Purple */
-            border: 1px solid rgba(124, 58, 237, 0.1);
-            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.05);
-            border-radius: 12px;
-            padding: 1.5rem;
+        /* Simple, Clean Search Box Styles */
+        .search-container {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1.2rem;
             margin-bottom: 2rem;
         }
 
-        .input-group label {
+        .input-wrapper label {
             display: block;
             font-size: 0.85rem;
-            font-weight: 700;
-            color: var(--accent); /* Purple Text */
-            margin-bottom: 0.5rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 0.4rem;
         }
 
-        .custom-input {
+        .simple-input {
             width: 100%;
-            padding: 0.75rem 1rem;
-            background-color: white;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            color: var(--text-dark);
-            transition: all 0.2s ease;
-            font-family: var(--font-sans);
+            padding: 0.6rem 0.8rem;
+            background-color: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: #334155;
+            font-family: inherit;
         }
 
-        .custom-input:focus {
+        .simple-input:focus {
             outline: none;
-            border-color: var(--accent); /* Purple Border */
-            box-shadow: 0 0 0 4px var(--accent-light); /* Purple Glow */
+            border-color: #64748b;
         }
 
-        .custom-input::placeholder {
+        .simple-input::placeholder {
             color: #94a3b8;
-        }
-
-        /* Select arrow styling */
-        select.custom-input {
-            cursor: pointer;
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-            background-position: right 0.5rem center;
-            background-repeat: no-repeat;
-            background-size: 1.5em 1.5em;
-            padding-right: 2.5rem;
-            -webkit-appearance: none;
-            appearance: none;
         }
       </style>
 
@@ -607,24 +606,32 @@ function downloadCSV() {
            <h1>Data Lineage Matrix</h1>
            <p class="subtitle">Full listing of Source → Target mappings</p>
         </div>
-        <button id="download-excel" class="btn-download">
-          <span>Download Excel</span>
-        </button>
+        <div style="display: flex; gap: 10px;">
+            <button id="download-excel" class="btn-download" style="text-decoration: none;">
+            
+              <span>Download Excel</span>
+            </button>
+            
+            <a href="lineage.csv" download class="btn-download" style="text-decoration: none;">
+             
+              <span>Download CSV</span>
+            </a>
+        </div>
       </header>
 
-      <div class="search-card">
-        <div style="display: flex; gap: 2rem; align-items: flex-end; flex-wrap: wrap;">
+      <div class="search-container">
+        <div style="display: flex; gap: 1.5rem; align-items: flex-end; flex-wrap: wrap;">
             
-            <div class="input-group" style="flex: 2; min-width: 280px;">
-                <label for="searchInput">🔍 Search Mappings</label>
-                <input type="text" id="searchInput" class="custom-input" 
-                       placeholder="Type to search columns, logic, or paths...">
+            <div class="input-wrapper" style="flex: 2; min-width: 250px;">
+                <label for="searchInput">Search Mappings</label>
+                <input type="text" id="searchInput" class="simple-input" 
+                       placeholder="Filter by column, path, or logic...">
             </div>
 
-            <div class="input-group" style="flex: 1; min-width: 220px;">
-                <label for="sourceFilter">⚡ Filter by Source</label>
-                <select id="sourceFilter" class="custom-input">
-                    <option value="">Show All Sources</option>
+            <div class="input-wrapper" style="flex: 1; min-width: 200px;">
+                <label for="sourceFilter">Source System</label>
+                <select id="sourceFilter" class="simple-input">
+                    <option value="">All Sources</option>
                     ${uniqueSources.map(s => `<option value="${s}">${s}</option>`).join('')}
                 </select>
             </div>
@@ -637,8 +644,8 @@ function downloadCSV() {
           <table class="data-table" id="lineage-table">
             <thead>
               <tr>
-                <th style="cursor: pointer;" onclick="sortTable(0)">Target Column ↕</th>
-                <th style="cursor: pointer;" onclick="sortTable(1)">Source ↕</th>
+                <th style="cursor: pointer; user-select: none;" onclick="sortTable(0)">Target Column ↕</th>
+                <th style="cursor: pointer; user-select: none;" onclick="sortTable(1)">Source ↕</th>
                 <th>Source Path</th>
                 <th>Transformation</th>
                 <th>Notes</th>
@@ -658,10 +665,8 @@ function downloadCSV() {
           </table>
         </div>
         
-        <div id="no-results" style="display:none; padding: 4rem 2rem; text-align: center; color: #64748b;">
-            <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">👻</div>
-            <h3 style="margin-bottom: 0.5rem; color: var(--text-dark);">No mappings found</h3>
-            <p>Try adjusting your search terms or filters.</p>
+        <div id="no-results" style="display:none; padding: 3rem; text-align: center; color: #94a3b8;">
+            No mappings found.
         </div>
       </div>
 
@@ -713,7 +718,6 @@ function downloadCSV() {
                 }
             });
 
-            // Toggle "No Results" message
             if(visibleCount === 0) {
                 noResults.style.display = 'block';
                 tableContainer.style.display = 'none';
@@ -1204,23 +1208,21 @@ function downloadCSV() {
         display: inline-flex;
         align-items: center;
         gap: 0.75rem;
-        padding: 0.75rem 1.5rem;
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
+        padding: 0.65rem 1.25rem;
+        background:  #813bf10d;
+        color: #6d28d9;
+        border: 2px solid #6d28d9;
+        border-radius: 30px;
         font-family: var(--font-sans);
-        font-size: 0.95rem;
-        font-weight: 600;
+        font-size: 0.85rem;
+        font-weight: 500;
         cursor: pointer;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 6px -1px rgba(124, 58, 237, 0.3), 0 2px 4px -1px rgba(124, 58, 237, 0.15);
         text-decoration: none;
         letter-spacing: 0.025em;
       }
       .btn-download:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 6px rgba(124, 58, 237, 0.3);
       }
       .btn-download .icon {
         font-size: 1.1em;
