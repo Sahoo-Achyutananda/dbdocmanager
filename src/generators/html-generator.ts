@@ -543,25 +543,103 @@ function downloadCSV() {
   }
 
   private generateLineagePage(ast: Project, outputDir: string): void {
+    // 1. Get unique source IDs for the dropdown filter
+    const uniqueSources = Array.from(new Set(ast.mappings.map(m => m.from.source_id))).sort();
+
     const content = `
+      <style>
+        /* Specific Styles for the Search Box to match the Theme */
+        .search-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%); /* White to Light Purple */
+            border: 1px solid rgba(124, 58, 237, 0.1);
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.05);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--accent); /* Purple Text */
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .custom-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background-color: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            color: var(--text-dark);
+            transition: all 0.2s ease;
+            font-family: var(--font-sans);
+        }
+
+        .custom-input:focus {
+            outline: none;
+            border-color: var(--accent); /* Purple Border */
+            box-shadow: 0 0 0 4px var(--accent-light); /* Purple Glow */
+        }
+
+        .custom-input::placeholder {
+            color: #94a3b8;
+        }
+
+        /* Select arrow styling */
+        select.custom-input {
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+      </style>
+
       <header class="page-header">
         <div>
            <h1>Data Lineage Matrix</h1>
            <p class="subtitle">Full listing of Source → Target mappings</p>
         </div>
         <button id="download-excel" class="btn-download">
-          <span class="icon">📥</span> 
           <span>Download Excel</span>
         </button>
       </header>
+
+      <div class="search-card">
+        <div style="display: flex; gap: 2rem; align-items: flex-end; flex-wrap: wrap;">
+            
+            <div class="input-group" style="flex: 2; min-width: 280px;">
+                <label for="searchInput">🔍 Search Mappings</label>
+                <input type="text" id="searchInput" class="custom-input" 
+                       placeholder="Type to search columns, logic, or paths...">
+            </div>
+
+            <div class="input-group" style="flex: 1; min-width: 220px;">
+                <label for="sourceFilter">⚡ Filter by Source</label>
+                <select id="sourceFilter" class="custom-input">
+                    <option value="">Show All Sources</option>
+                    ${uniqueSources.map(s => `<option value="${s}">${s}</option>`).join('')}
+                </select>
+            </div>
+
+        </div>
+      </div>
 
       <div class="card">
         <div class="table-responsive">
           <table class="data-table" id="lineage-table">
             <thead>
               <tr>
-                <th>Target Column</th>
-                <th>Source</th>
+                <th style="cursor: pointer;" onclick="sortTable(0)">Target Column ↕</th>
+                <th style="cursor: pointer;" onclick="sortTable(1)">Source ↕</th>
                 <th>Source Path</th>
                 <th>Transformation</th>
                 <th>Notes</th>
@@ -569,7 +647,7 @@ function downloadCSV() {
             </thead>
             <tbody>
               ${ast.mappings.map(m => `
-                <tr>
+                <tr class="lineage-row" data-source="${m.from.source_id}">
                   <td class="font-mono font-medium">${m.target}</td>
                   <td><strong class="text-dark">${m.from.source_id}</strong></td>
                   <td class="font-mono text-purple">${m.from.path}</td>
@@ -580,10 +658,17 @@ function downloadCSV() {
             </tbody>
           </table>
         </div>
+        
+        <div id="no-results" style="display:none; padding: 4rem 2rem; text-align: center; color: #64748b;">
+            <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">👻</div>
+            <h3 style="margin-bottom: 0.5rem; color: var(--text-dark);">No mappings found</h3>
+            <p>Try adjusting your search terms or filters.</p>
+        </div>
       </div>
 
       <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
       <script>
+        // --- 1. EXCEL EXPORT LOGIC ---
         document.getElementById('download-excel').addEventListener('click', function() {
           const data = ${JSON.stringify(ast.mappings.map(m => ({
             'Target Column': m.target,
@@ -594,22 +679,91 @@ function downloadCSV() {
           })))};
 
           const ws = XLSX.utils.json_to_sheet(data);
-          ws['!cols'] = [
-            { wch: 40 },
-            { wch: 20 },
-            { wch: 30 },
-            { wch: 25 },
-            { wch: 50 }
-          ];
-
+          ws['!cols'] = [{ wch: 40 }, { wch: 20 }, { wch: 30 }, { wch: 25 }, { wch: 50 }];
           const wb = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(wb, ws, 'Lineage Matrix');
-
+          
           const timestamp = new Date().toISOString().split('T')[0];
-          const filename = '${ast.project}_lineage_matrix_' + timestamp + '.xlsx';
-
-          XLSX.writeFile(wb, filename);
+          XLSX.writeFile(wb, '${ast.project}_lineage_' + timestamp + '.xlsx');
         });
+
+        // --- 2. SEARCH & FILTER LOGIC ---
+        const searchInput = document.getElementById('searchInput');
+        const sourceFilter = document.getElementById('sourceFilter');
+        const tableRows = document.querySelectorAll('.lineage-row');
+        const noResults = document.getElementById('no-results');
+        const tableContainer = document.querySelector('.table-responsive');
+
+        function filterTable() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const selectedSource = sourceFilter.value;
+            let visibleCount = 0;
+
+            tableRows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                const source = row.getAttribute('data-source');
+                
+                const matchesSearch = text.includes(searchTerm);
+                const matchesSource = selectedSource === '' || source === selectedSource;
+
+                if (matchesSearch && matchesSource) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            // Toggle "No Results" message
+            if(visibleCount === 0) {
+                noResults.style.display = 'block';
+                tableContainer.style.display = 'none';
+            } else {
+                noResults.style.display = 'none';
+                tableContainer.style.display = 'block';
+            }
+        }
+
+        searchInput.addEventListener('input', filterTable);
+        sourceFilter.addEventListener('change', filterTable);
+
+        // --- 3. SORT LOGIC ---
+        function sortTable(n) {
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.getElementById("lineage-table");
+            switching = true;
+            dir = "asc"; 
+            while (switching) {
+                switching = false;
+                rows = table.rows;
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[n];
+                    y = rows[i + 1].getElementsByTagName("TD")[n];
+                    if (dir == "asc") {
+                        if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount ++;      
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
       </script>
     `;
     fs.writeFileSync(path.join(outputDir, 'lineage.html'), this.getPageLayout(ast, 'Lineage', content, 'lineage-table'));
@@ -1047,7 +1201,6 @@ function downloadCSV() {
         letter-spacing: 0.025em;
       }
       .btn-download:hover {
-        background: var(--accent-hover);
         transform: translateY(-1px);
         box-shadow: 0 4px 6px rgba(124, 58, 237, 0.3);
       }
@@ -1075,7 +1228,7 @@ function downloadCSV() {
     return `table_${db}_${table}.html`;
   }
   
-  private generateERDAssets(ast: Project, outputDir: string): void {
+private generateERDAssets(ast: Project, outputDir: string): void {
     // 1. Generate the Mermaid string from the AST
     const erGen = new ERGenerator();
     const mermaidCode = erGen.generateMermaidCode(ast);
@@ -1113,67 +1266,47 @@ function downloadCSV() {
         }
         
         #toolbar {
-            position: absolute; /* Changed from fixed to absolute for dashboard containment */
+            position: absolute;
             top: 20px; 
             left: 20px; 
             z-index: 1000;
             background: white; 
-            padding: 12px 16px; 
+            padding: 8px; 
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
             border: 1px solid #e1e4e8;
             display: flex; 
-            gap: 12px; 
+            gap: 8px; 
             align-items: center;
         }
         
         #toolbar button { 
-            padding: 8px 16px; 
+            width: 32px;
+            height: 32px;
+            padding: 0;
             cursor: pointer; 
             background: #fff; 
             border: 1px solid #d1d5da; 
             border-radius: 6px; 
             font-weight: 600; 
-            font-size: 13px; 
-            color: #24292e;
+            font-size: 16px; 
+            color: #57606a;
             transition: all 0.2s;
             font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         #toolbar button:hover { 
-            background: #f6f8fa; 
+            background: #f3f4f6; 
             border-color: #8c959f;
+            color: #24292e;
         }
         
         #toolbar button:active {
-            transform: scale(0.98);
-        }
-        
-        #toolbar .btn-primary { 
-            background: #0969da; 
-            color: white; 
-            border: 1px solid #0969da; 
-        }
-        
-        #toolbar .btn-primary:hover { 
-            background: #0356b6;
-            border-color: #0356b6; 
-        }
-        
-        .file-upload { 
-            position: relative; 
-            overflow: hidden; 
-            display: inline-block; 
-        }
-        
-        .file-upload input[type=file] { 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            opacity: 0; 
-            width: 100%; 
-            height: 100%; 
-            cursor: pointer; 
+            background: #ebecf0;
+            transform: translateY(1px);
         }
 
         #paper-container { 
@@ -1206,14 +1339,10 @@ function downloadCSV() {
 
     <div id="er-wrapper">
         <div id="toolbar">
-            <div class="file-upload">
-                <button class="btn-primary">📂 Load .mmd File</button>
-                <input type="file" id="file-input" accept=".mmd,.txt">
-            </div>
-            <button id="btn-zoom-in">🔍</button>
-            <button id="btn-zoom-out">🔎</button>
-            <button id="btn-fit">⊡</button>
-            <button id="btn-reset">↻</button>
+            <button id="btn-zoom-in" title="Zoom In">＋</button>
+            <button id="btn-zoom-out" title="Zoom Out">−</button>
+            <button id="btn-fit" title="Fit to Screen" style="font-size: 14px;">⊡</button>
+            <button id="btn-reset" title="Reset View" style="font-size: 14px;">↻</button>
         </div>
 
         <div id="paper-container">
@@ -1812,28 +1941,6 @@ function downloadCSV() {
                 console.log('Error loading diagram', error);
             }
         }
-
-        // File upload handler
-        document.getElementById('file-input').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if(!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    paper.freeze();
-                    const parsed = parseMermaid(e.target.result);
-                    buildGraph(parsed);
-                } catch (error) {
-                    console.error('Error parsing file:', error);
-                    alert('Error parsing .mmd file. Please check the format.');
-                }
-            };
-            reader.onerror = () => {
-                alert('Error reading file');
-            };
-            reader.readAsText(file);
-        });
 
         // Zoom controls
         let scale = 1;
