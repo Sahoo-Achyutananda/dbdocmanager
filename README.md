@@ -1,38 +1,42 @@
 # DBDocManager
 
-A lightweight database documentation and lineage tool using a JSON-based DSL.
+> A lightweight database documentation and lineage tool using a JSON-based DSL  
+> **College Project** - Software Systems Development Course
+
+A command-line tool that helps document relational databases and track data lineage from NoSQL sources to relational tables. Generate beautiful HTML documentation with column-level mappings and transformation tracking.
 
 ## Features
 
-✅ **Schema Documentation** - Document tables, columns, types, constraints  
+✅ **Schema Documentation** - Document tables, columns, types, and constraints  
 ✅ **Data Lineage** - Track source → target mappings at column level  
 ✅ **NoSQL Support** - Document MongoDB → Relational transformations  
-✅ **HTML Generation** - Beautiful, searchable static documentation  
-✅ **CLI Tool** - Validate and generate docs from command line  
-✅ **Git-Friendly** - Version control your data documentation
+✅ **HTML Generation** - Beautiful, searchable static documentation with interactive graphs  
+✅ **Transform Tracking** - Visualize data transformations in lineage graphs  
+✅ **CLI Tool** - Validate and generate docs from anywhere
 
 ## Installation
 
+### Global Installation (Recommended)
+
+Install globally to use the `dbdoc` command from anywhere:
+
 ```bash
-# Clone the repository
-git clone <your-repo-url>
-cd dbdoc-manager
+npm install -g dbdocmanager_ssd
+```
 
-# Install dependencies
-npm install
+**Note:** The package name is `dbdocmanager_ssd` (not `dbdoc`, which is a different package).
 
-# Build the project
-npm run build
+### Verify Installation
 
-# (Optional) Install globally
-npm link
+```bash
+dbdoc --version
 ```
 
 ## Quick Start
 
-### 1. Create a DSL file
+### 1. Create a DSL File
 
-Create `my-schema.json`:
+Create a file named `my-database.json`:
 
 ```json
 {
@@ -42,6 +46,7 @@ Create `my-schema.json`:
     {
       "db": "warehouse",
       "engine": "postgres",
+      "schema": "public",
       "tables": [
         {
           "name": "users",
@@ -57,7 +62,8 @@ Create `my-schema.json`:
               "name": "email",
               "type": "VARCHAR(255)",
               "unique": true,
-              "nullable": false
+              "nullable": false,
+              "description": "User email address"
             }
           ]
         }
@@ -67,8 +73,9 @@ Create `my-schema.json`:
   "sources": [
     {
       "id": "app_db",
-      "kind": "postgres",
-      "db": "production"
+      "kind": "mongodb",
+      "db": "production",
+      "collection": "users"
     }
   ],
   "mappings": [
@@ -76,57 +83,39 @@ Create `my-schema.json`:
       "target": "warehouse.public.users.email",
       "from": {
         "source_id": "app_db",
-        "path": "users.email_address",
-        "transform": "LOWER()"
+        "path": "contact.email",
+        "transform": "LOWER(TRIM())"
       }
     }
   ]
 }
 ```
 
-### 2. Validate your DSL
+### 2. Validate Your Schema
 
 ```bash
-npm run dev validate my-schema.json
-```
-
-Output:
-```
-🔍 Validating DSL file...
-✓ Successfully parsed DSL file
-  Project: my_project
-  Targets: 1
-  Sources: 1
-  Mappings: 1
-
-✓ Validation passed!
+dbdoc validate my-database.json
 ```
 
 ### 3. Generate Documentation
 
 ```bash
-npm run dev generate my-schema.json -o ./docs
-```
-
-Output:
-```
-📚 Generating documentation...
-✓ Parsed DSL file
-✓ Validation passed
-✓ Generated documentation in ./docs
-
-Open ./docs/index.html in your browser to view.
+dbdoc generate my-database.json -o ./docs
 ```
 
 ### 4. View Documentation
 
-Open `./docs/index.html` in your browser!
+Open `./docs/index.html` in your browser to view:
+- Project overview with all tables
+- Individual table pages with columns and constraints
+- Data lineage table view
+- **Interactive lineage graph** with transform labels
 
 ## CLI Commands
 
 ### `dbdoc validate <file>`
 
-Validate a DSL file for errors and warnings.
+Validates your DSL file for errors and warnings.
 
 ```bash
 dbdoc validate schema.json
@@ -134,64 +123,40 @@ dbdoc validate schema.json
 
 ### `dbdoc generate <file> [options]`
 
-Generate HTML documentation.
+Generates HTML documentation from your DSL file.
 
 ```bash
 dbdoc generate schema.json -o ./output
 ```
 
-Options:
+**Options:**
 - `-o, --output <dir>` - Output directory (default: `./docs`)
 
 ### `dbdoc info <file>`
 
-Display summary information about a DSL file.
+Displays summary information about your DSL file.
 
 ```bash
 dbdoc info schema.json
 ```
 
-## DSL Reference
+## DSL Schema Reference
 
-### Project Structure
+### Basic Structure
 
 ```json
 {
   "project": "string (required)",
   "version": "string (optional)",
   "description": "string (optional)",
-  "owners": ["array of strings (optional)"],
+  "owners": ["email@example.com"],
   "targets": [],
   "sources": [],
   "mappings": []
 }
 ```
 
-### Targets (Databases)
-
-```json
-{
-  "db": "database_name",
-  "engine": "postgres|mysql|snowflake|bigquery",
-  "schema": "schema_name (optional)",
-  "tables": [...]
-}
-```
-
-### Tables
-
-```json
-{
-  "name": "table_name",
-  "description": "Table description",
-  "columns": [...],
-  "primary_key": ["column1", "column2"],
-  "foreign_keys": [...],
-  "indexes": [...]
-}
-```
-
-### Columns
+### Column Definition
 
 ```json
 {
@@ -199,103 +164,82 @@ dbdoc info schema.json
   "type": "VARCHAR(255)",
   "nullable": false,
   "default": "default_value",
-  "description": "Column description",
+  "description": "Description",
   "pk": false,
   "unique": false,
   "auto_increment": false
 }
 ```
 
-### Sources
+### Source Definition
 
 ```json
 {
-  "id": "unique_source_id",
-  "kind": "mongodb|postgres|mysql|api|csv",
-  "connection": "connection_string",
+  "id": "unique_id",
+  "kind": "mongodb|postgres|mysql|api",
   "db": "database_name",
-  "collection": "collection_name (for MongoDB)",
-  "description": "Source description"
+  "collection": "collection_name"
 }
 ```
 
-### Mappings (Lineage)
+### Mapping (Lineage)
 
 ```json
 {
   "target": "db.schema.table.column",
   "from": {
     "source_id": "source_id",
-    "path": "$.path.to.field",
+    "path": "field.path",
     "transform": "LOWER()"
   },
-  "description": "Mapping description"
+  "description": "Optional description"
 }
 ```
 
-## Example: E-commerce Project
+## Example Output
 
-See `examples/sample-schema.json` for a complete example.
+The tool generates:
 
+1. **Index Page** - Overview of all databases and tables
+2. **Table Pages** - Detailed column information with data lineage
+3. **Lineage Table** - All source-to-target mappings
+4. **Lineage Graph** - Interactive visualization with:
+   - Source and target nodes grouped by table/collection
+   - Column-level connections
+   - Transform labels on edges
+   - Hover tooltips showing full qualified names
+
+## Project Information
+
+**Course:** Software Systems Development  
+**Team Size:** 5 members  
+**Package:** dbdocmanager_ssd  
+**Point of Contact:** 
+Team Members :
+- Achyutananda Sahoo
+- Satyajit Priyadarshi
+- Abhijith Sangarsu
+- Swaraj Kumar
+- Ameya Purohit
+Guide : Sai Anirudh Karre
+
+## License
+
+This is a college project created for educational purposes.
+
+## Troubleshooting
+
+**Command not found after installation:**
 ```bash
-# Test with example
-npm run test
+# Try installing with sudo (Linux/Mac)
+sudo npm install -g dbdocmanager_ssd
+
+# Or check your npm global bin path
+npm config get prefix
 ```
 
-## Project Structure
-
-```
-dbdoc-manager/
-├── src/
-│   ├── types/
-│   │   └── ast.ts           # TypeScript interfaces
-│   ├── parser/
-│   │   └── parser.ts        # JSON parser
-│   ├── validator/
-│   │   └── validator.ts     # Validation logic
-│   ├── generators/
-│   │   └── html-generator.ts # HTML documentation generator
-│   └── cli.ts               # Command-line interface
-├── examples/
-│   └── sample-schema.json   # Example DSL file
-├── dist/                    # Compiled JavaScript (generated)
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-## Development
-
+**Permission errors on Linux/Mac:**
 ```bash
-# Run in development mode
-npm run dev validate examples/sample-schema.json
-npm run dev generate examples/sample-schema.json
-
-# Build for production
-npm run build
-
-# Run built version
-node dist/cli.js validate examples/sample-schema.json
+# Fix npm permissions
+sudo chown -R $USER /usr/local/lib/node_modules
 ```
-
-## Features Roadmap
-
-### ✅ MVP (Current)
-- [x] JSON DSL parsing
-- [x] Schema validation
-- [x] HTML documentation generation
-- [x] Column-level lineage tracking
-- [x] CLI interface
-
-### 🚧 Phase 2
-- [ ] ERD diagram generation (Mermaid)
-- [ ] Interactive lineage graph (Cytoscape)
-- [ ] Array explosion documentation
-- [ ] Database introspection tool
-
-### 🔮 Phase 3
-- [ ] Web-based DSL editor - maybe
-- [ ] Real-time validation -maybe
-- [ ] Markdown export -maybe
-- [ ] CI/CD integration examples -maybe
-- [ ] Transform library -maybe
