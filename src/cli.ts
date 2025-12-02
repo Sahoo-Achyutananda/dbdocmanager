@@ -2,6 +2,9 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
+import * as path from 'path';
+import { exec } from 'child_process';
+import * as os from 'os';
 const { exit } = require('node:process');
 import { DBDocParser } from './parser/parser';
 import { DBDocValidator } from './validator/validator';
@@ -101,9 +104,33 @@ program
       const generator = new HTMLGenerator();
       generator.generate(ast, options.output);
       
+      const absolutePath = path.resolve(options.output, 'index.html');
+      
       console.log(chalk.green(`\n✓ Documentation generated successfully!`));
-      console.log(chalk.gray(`  Output: ${options.output}`));
-      console.log(chalk.cyan(`\nOpen ${options.output}/index.html in your browser to view.`));
+      console.log(chalk.gray(`  Output: ${absolutePath}`));
+      
+      // --- AUTO OPEN LOGIC ---
+      console.log(chalk.cyan(`\n🚀 Opening in your browser...`));
+      
+      let command;
+      const platform = os.platform();
+
+      if (platform === 'win32') {
+        // Windows
+        command = `start "" "${absolutePath}"`;
+      } else if (platform === 'darwin') {
+        // macOS
+        command = `open "${absolutePath}"`;
+      } else {
+        // Linux
+        command = `xdg-open "${absolutePath}"`;
+      }
+
+      exec(command, (error) => {
+        if (error) {
+          console.log(chalk.yellow('Could not auto-open browser. Please open the file manually.'));
+        }
+      });
       
     } catch (error: any) {
       console.error(chalk.red('✗ Error:'), error.message);

@@ -4,7 +4,7 @@ import { Project, Table, Column, Mapping, Source } from '../types/ast';
 import { ERGenerator } from './er-generator';
 
 export class HTMLGenerator {
-  generate(ast: Project, outputDir: string): void {
+ generate(ast: Project, outputDir: string): void {
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
     }
@@ -19,12 +19,11 @@ export class HTMLGenerator {
     }
 
     this.generateLineagePage(ast, outputDir);
-    this.generateLineageGraphData(ast, outputDir); // Backend data
-    this.generateLineageGraphPage(ast, outputDir); // Frontend graph
+    
+    // CHANGED: We now do this in one step, no separate JSON file needed
+    this.generateLineageGraphPage(ast, outputDir); 
+    
     this.generateERDAssets(ast, outputDir);
-
-    // Generate mapping matrix page
-    this.generateMappingMatrixPage(ast, outputDir);
 
     console.log(`✓ Generated documentation in ${outputDir}`);
   }
@@ -769,180 +768,11 @@ function downloadCSV() {
     fs.writeFileSync(path.join(outputDir, 'lineage.html'), this.getPageLayout(ast, 'Lineage', content, 'lineage-table'));
   }
 
+ // This replaces both generateLineageGraphPage AND generateLineageGraphData
   private generateLineageGraphPage(ast: Project, outputDir: string): void {
-    const content = `
-      <header class="page-header">
-        <div>
-           <h1>Data Lineage Graph</h1>
-           <p class="subtitle">Interactive Column-Level Dependencies</p>
-        </div>
-        <div class="legend">
-           <span class="legend-item"><span class="dot blue"></span> Source</span>
-           <span class="legend-item"><span class="dot yellow"></span> Target</span>
-        </div>
-      </header>
-
-      <div class="card" style="height: 75vh; padding: 0; overflow: hidden; border-radius: 12px; position: relative;">
-        <!-- The Graph Container -->
-        <div id="cy" style="width: 100%; height: 100%;"></div>
-        
-        <!-- Floating Controls -->
-        <div class="controls">
-            <button id="zoom-in" class="control-btn" title="Zoom In">+</button>
-            <button id="zoom-out" class="control-btn" title="Zoom Out">−</button>
-            <div class="divider"></div>
-            <button id="fit-view" class="control-btn" title="Reset View">⟲</button>
-        </div>
-      </div>
-
-      <script>
-        cytoscape.use(cytoscapeDagre);
-        document.addEventListener('DOMContentLoaded', function () {
-          fetch('./lineage-data.json')
-            .then((res) => res.json())
-            .then((data) => {
-              var cy = cytoscape({
-                container: document.getElementById('cy'),
-                elements: data,
-                minZoom: 0.1,
-                maxZoom: 3,
-                wheelSensitivity: 0.2, // Smoother wheel zoom
-                style: [
-                  {
-                    selector: 'node',
-                    style: {
-                      'shape': 'round-rectangle',
-                      'border-width': '1px',
-                      'border-color': '#e2e8f0',
-                      'label': 'data(label)',
-                      'text-valign': 'center',
-                      'text-halign': 'center',
-                      'font-family': 'Inter, sans-serif',
-                      'font-size': '11px',
-                      'color': '#334155',
-                      'background-color': '#ffffff',
-                      'width': '120px',
-                      'height': '34px',
-                      'text-wrap': 'ellipsis',
-                      'text-max-width': '110px',
-                      'shadow-blur': '4px',
-                      'shadow-color': 'rgba(0,0,0,0.05)',
-                      'shadow-opacity': 1
-                    }
-                  },
-                  {
-                    selector: ':parent',
-                    style: {
-                      'background-color': '#f8fafc',
-                      'background-opacity': 0.5,
-                      'border-width': '1px',
-                      'border-color': '#cbd5e1',
-                      'border-style': 'dashed',
-                      'label': 'data(label)',
-                      'text-valign': 'top',
-                      'text-halign': 'center',
-                      'font-size': '12px',
-                      'font-weight': 'bold',
-                      'color': '#64748b',
-                      'padding': '25px',
-                      'text-margin-y': '-8px'
-                    },
-                  },
-                  {
-                    selector: 'edge',
-                    style: {
-                      'curve-style': 'bezier',
-                      'width': 1.5,
-                      'line-color': '#94a3b8',
-                      'target-arrow-color': '#94a3b8',
-                      'target-arrow-shape': 'triangle'
-                    }
-                  },
-                  {
-                    selector: 'edge[label]',
-                    style: {
-                      'label': 'data(label)',
-                      'font-size': '9px',
-                      'color': '#7c3aed',
-                      'text-background-color': '#ffffff',
-                      'text-background-opacity': 1,
-                      'text-background-padding': '3px',
-                      'text-background-shape': 'round-rectangle',
-                      'text-border-width': '1px',
-                      'text-border-color': '#f3e8ff',
-                      'edge-text-rotation': 'autorotate'
-                    }
-                  },
-                  {
-                    selector: 'node[type="source-column"]',
-                    style: { 'border-left-width': '3px', 'border-left-color': '#60a5fa' }
-                  },
-                  {
-                    selector: 'node[type="target-column"]',
-                    style: { 'border-left-width': '3px', 'border-left-color': '#fbbf24' }
-                  },
-                  // Grab state styles
-                  {
-                    selector: 'core',
-                    style: {
-                      'active-bg-opacity': 0
-                    }
-                  }
-                ],
-                layout: {
-                  name: 'dagre',
-                  rankDir: 'LR',
-                  spacingFactor: 1.2,
-                  nodeSep: 40,
-                  rankSep: 150,
-                  padding: 50,
-                  nodeDimensionsIncludeLabels: true
-                }
-              });
-
-              // --- CONTROLS LOGIC ---
-              
-              // Zoom In
-              document.getElementById('zoom-in').addEventListener('click', function() {
-                cy.animate({
-                  zoom: {
-                    level: cy.zoom() * 1.2,
-                    position: { x: cy.width() / 2, y: cy.height() / 2 }
-                  },
-                  duration: 300
-                });
-              });
-
-              // Zoom Out
-              document.getElementById('zoom-out').addEventListener('click', function() {
-                cy.animate({
-                  zoom: {
-                    level: cy.zoom() * 0.8,
-                    position: { x: cy.width() / 2, y: cy.height() / 2 }
-                  },
-                  duration: 300
-                });
-              });
-
-              // Reset (Fit)
-              document.getElementById('fit-view').addEventListener('click', function() {
-                cy.animate({
-                  fit: { padding: 50 },
-                  duration: 500
-                });
-              });
-
-            });
-        });
-      </script>
-    `;
-    fs.writeFileSync(path.join(outputDir, 'lineage-graph.html'), this.getPageLayout(ast, 'Graph', content, 'lineage-graph'));
-  }
-
-  // --- 3. BACKEND DATA GENERATOR (Unchanged) ---
-  private generateLineageGraphData(ast: Project, outputDir: string): void {
-    interface GraphElement { data: any; }
-    const nodes = new Map<string, GraphElement>();
+    
+    // --- STEP 1: CALCULATE DATA IN MEMORY (Don't save to file) ---
+    const nodes = new Map<string, any>();
     const edges = new Map<string, any>();
     const sourceMap = new Map<string, Source>(ast.sources.map((s) => [s.id, s]));
 
@@ -984,8 +814,196 @@ function downloadCSV() {
     }
 
     const graphData = { nodes: Array.from(nodes.values()), edges: Array.from(edges.values()) };
-    fs.writeFileSync(path.join(outputDir, 'lineage-data.json'), JSON.stringify(graphData, null, 2));
+
+    // --- STEP 2: GENERATE HTML WITH EMBEDDED DATA ---
+    const content = `
+      <header class="page-header">
+        <div>
+           <h1>Data Lineage Graph</h1>
+           <p class="subtitle">Interactive Column-Level Dependencies</p>
+        </div>
+        <div class="legend">
+           <span class="legend-item"><span class="dot blue"></span> Source</span>
+           <span class="legend-item"><span class="dot yellow"></span> Target</span>
+        </div>
+      </header>
+
+      <div class="card" style="height: 75vh; padding: 0; overflow: hidden; border-radius: 12px; position: relative;">
+        <div id="cy" style="width: 100%; height: 100%;"></div>
+        
+        <div class="controls">
+            <button id="zoom-in" class="control-btn" title="Zoom In">＋</button>
+            <button id="zoom-out" class="control-btn" title="Zoom Out">−</button>
+            <div class="divider"></div>
+            <button id="fit-view" class="control-btn" title="Reset View">⟲</button>
+        </div>
+      </div>
+
+      <script>
+        cytoscape.use(cytoscapeDagre);
+        document.addEventListener('DOMContentLoaded', function () {
+          
+          // INJECTED DATA: No fetch required!
+          const graphData = ${JSON.stringify(graphData)};
+
+          var cy = cytoscape({
+            container: document.getElementById('cy'),
+            elements: graphData, // Use the variable directly
+            minZoom: 0.1,
+            maxZoom: 3,
+            wheelSensitivity: 0.2,
+            style: [
+              {
+                selector: 'node',
+                style: {
+                  'shape': 'round-rectangle',
+                  'border-width': '1px',
+                  'border-color': '#e2e8f0',
+                  'label': 'data(label)',
+                  'text-valign': 'center',
+                  'text-halign': 'center',
+                  'font-family': 'Inter, sans-serif',
+                  'font-size': '11px',
+                  'color': '#334155',
+                  'background-color': '#ffffff',
+                  'width': '120px',
+                  'height': '34px',
+                  'text-wrap': 'ellipsis',
+                  'text-max-width': '110px',
+                  'shadow-blur': '4px',
+                  'shadow-color': 'rgba(0,0,0,0.05)',
+                  'shadow-opacity': 1
+                }
+              },
+              {
+                selector: ':parent',
+                style: {
+                  'background-color': '#f8fafc',
+                  'background-opacity': 0.5,
+                  'border-width': '1px',
+                  'border-color': '#cbd5e1',
+                  'border-style': 'dashed',
+                  'label': 'data(label)',
+                  'text-valign': 'top',
+                  'text-halign': 'center',
+                  'font-size': '12px',
+                  'font-weight': 'bold',
+                  'color': '#64748b',
+                  'padding': '25px',
+                  'text-margin-y': '-8px'
+                },
+              },
+              {
+                selector: 'edge',
+                style: {
+                  'curve-style': 'bezier',
+                  'width': 1.5,
+                  'line-color': '#94a3b8',
+                  'target-arrow-color': '#94a3b8',
+                  'target-arrow-shape': 'triangle'
+                }
+              },
+              {
+                selector: 'edge[label]',
+                style: {
+                  'label': 'data(label)',
+                  'font-size': '9px',
+                  'color': '#7c3aed',
+                  'text-background-color': '#ffffff',
+                  'text-background-opacity': 1,
+                  'text-background-padding': '3px',
+                  'text-background-shape': 'round-rectangle',
+                  'text-border-width': '1px',
+                  'text-border-color': '#f3e8ff',
+                  'edge-text-rotation': 'autorotate'
+                }
+              },
+              {
+                selector: 'node[type="source-column"]',
+                style: { 'border-left-width': '3px', 'border-left-color': '#60a5fa' }
+              },
+              {
+                selector: 'node[type="target-column"]',
+                style: { 'border-left-width': '3px', 'border-left-color': '#fbbf24' }
+              }
+            ],
+            layout: {
+              name: 'dagre',
+              rankDir: 'LR',
+              spacingFactor: 1.2,
+              nodeSep: 40,
+              rankSep: 150,
+              padding: 50,
+              nodeDimensionsIncludeLabels: true
+            }
+          });
+
+          // Controls
+          document.getElementById('zoom-in').addEventListener('click', function() {
+            cy.animate({ zoom: { level: cy.zoom() * 1.2, position: { x: cy.width() / 2, y: cy.height() / 2 } }, duration: 300 });
+          });
+
+          document.getElementById('zoom-out').addEventListener('click', function() {
+            cy.animate({ zoom: { level: cy.zoom() * 0.8, position: { x: cy.width() / 2, y: cy.height() / 2 } }, duration: 300 });
+          });
+
+          document.getElementById('fit-view').addEventListener('click', function() {
+            cy.animate({ fit: { padding: 50 }, duration: 500 });
+          });
+        });
+      </script>
+    `;
+    
+    fs.writeFileSync(path.join(outputDir, 'lineage-graph.html'), this.getPageLayout(ast, 'Graph', content, 'lineage-graph'));
   }
+
+  // --- 3. BACKEND DATA GENERATOR (Unchanged) ---
+  // private generateLineageGraphData(ast: Project, outputDir: string): void {
+  //   interface GraphElement { data: any; }
+  //   const nodes = new Map<string, GraphElement>();
+  //   const edges = new Map<string, any>();
+  //   const sourceMap = new Map<string, Source>(ast.sources.map((s) => [s.id, s]));
+
+  //   for (const mapping of ast.mappings) {
+  //     try {
+  //       const targetParts = mapping.target.split('.');
+  //       if (targetParts.length < 4) continue;
+
+  //       const targetTableId = targetParts.slice(0, 3).join('.');
+  //       const targetTableLabel = targetParts[2];
+  //       const targetColumnId = mapping.target;
+  //       const targetColumnLabel = targetParts[3];
+
+  //       const sourceId = mapping.from.source_id;
+  //       const sourcePath = mapping.from.path;
+  //       const sourceColumnId = `${sourceId}:${sourcePath}`;
+  //       const sourceObj = sourceMap.get(sourceId);
+        
+  //       if (!sourceObj) continue;
+
+  //       if (!nodes.has(targetTableId)) {
+  //         nodes.set(targetTableId, { data: { id: targetTableId, label: targetTableLabel, type: 'target-parent' }});
+  //       }
+  //       if (!nodes.has(sourceId)) {
+  //         nodes.set(sourceId, { data: { id: sourceId, label: sourceObj.collection || sourceId, type: 'source-parent', kind: sourceObj.kind }});
+  //       }
+  //       if (!nodes.has(targetColumnId)) {
+  //         nodes.set(targetColumnId, { data: { id: targetColumnId, label: targetColumnLabel, type: 'target-column', parent: targetTableId }});
+  //       }
+  //       if (!nodes.has(sourceColumnId)) {
+  //         nodes.set(sourceColumnId, { data: { id: sourceColumnId, label: sourcePath, type: 'source-column', parent: sourceId }});
+  //       }
+
+  //       const edgeId = `${sourceColumnId}_to_${targetColumnId}`;
+  //       if (!edges.has(edgeId)) {
+  //           edges.set(edgeId, { data: { id: edgeId, source: sourceColumnId, target: targetColumnId, label: mapping.from.transform }});
+  //       }
+  //     } catch(e) {}
+  //   }
+
+  //   const graphData = { nodes: Array.from(nodes.values()), edges: Array.from(edges.values()) };
+  //   fs.writeFileSync(path.join(outputDir, 'lineage-data.json'), JSON.stringify(graphData, null, 2));
+  // }
 
   // --- 4. CLARITY SIDEBAR CSS (Enhanced for Graph Controls) ---
   private getClaritySidebarStyles(): string {
@@ -1233,7 +1251,7 @@ private generateERDAssets(ast: Project, outputDir: string): void {
     const erGen = new ERGenerator();
     const mermaidCode = erGen.generateMermaidCode(ast);
     
-    // 2. Save the physical file (as a backup/download option)
+    // 2. Save the physical file
     fs.writeFileSync(path.join(outputDir, 'schema.mmd'), mermaidCode);
 
     // 3. The HTML Content
@@ -1247,10 +1265,8 @@ private generateERDAssets(ast: Project, outputDir: string): void {
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.7.5/joint.min.css" />
 
     <style>
-        /* SCALED DOWN BODY STYLES TO FIT CONTAINER */
-        #er-wrapper * {
-            box-sizing: border-box;
-        }
+        /* CONTAINER STYLES */
+        #er-wrapper * { box-sizing: border-box; }
         
         #er-wrapper { 
             margin: 0; 
@@ -1259,56 +1275,62 @@ private generateERDAssets(ast: Project, outputDir: string): void {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
             background: #f6f8fa;
             width: 100%;
-            height: 85vh; /* Adjusted to fit dashboard */
+            height: 85vh;
             position: relative;
-            border-radius: 8px;
+            border-radius: 12px;
             border: 1px solid #e1e4e8;
         }
-        
-        #toolbar {
+
+        /* CONTROLS (MATCHING LINEAGE GRAPH) */
+        .controls {
             position: absolute;
-            top: 20px; 
-            left: 20px; 
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
             z-index: 1000;
-            background: white; 
-            padding: 8px; 
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
-            border: 1px solid #e1e4e8;
-            display: flex; 
-            gap: 8px; 
-            align-items: center;
+            background: white;
+            padding: 8px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
         }
-        
-        #toolbar button { 
-            width: 32px;
-            height: 32px;
-            padding: 0;
-            cursor: pointer; 
-            background: #fff; 
-            border: 1px solid #d1d5da; 
-            border-radius: 6px; 
-            font-weight: 600; 
-            font-size: 16px; 
-            color: #57606a;
-            transition: all 0.2s;
-            font-family: inherit;
+
+        .control-btn {
+            width: 36px;
+            height: 36px;
+            background: white;
+            border: 1px solid transparent;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: pointer;
+            color: #64748b; /* text-muted */
+            font-size: 1.2rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            padding: 0;
         }
-        
-        #toolbar button:hover { 
-            background: #f3f4f6; 
-            border-color: #8c959f;
-            color: #24292e;
+
+        .control-btn:hover {
+            color: #7c3aed; /* accent color */
+            background-color: #f5f3ff; /* accent light */
         }
-        
-        #toolbar button:active {
-            background: #ebecf0;
+
+        .control-btn:active {
             transform: translateY(1px);
         }
 
+        .divider { 
+            height: 1px; 
+            background: #e2e8f0; 
+            margin: 2px 0; 
+            width: 100%;
+        }
+
+        /* PAPER & JOINTJS OVERRIDES */
         #paper-container { 
             width: 100%; 
             height: 100%; 
@@ -1318,31 +1340,18 @@ private generateERDAssets(ast: Project, outputDir: string): void {
             position: relative;
         }
         
-        #paper-container.grabbing { 
-            cursor: grabbing; 
-        }
-
-        #paper {
-            width: 100%;
-            height: 100%;
-        }
-
-        /* Make link labels non-interactive */
-        .joint-link-label {
-            pointer-events: none !important;
-        }
-
-        .joint-link .label-rect {
-            pointer-events: none !important;
-        }
+        #paper-container.grabbing { cursor: grabbing; }
+        #paper { width: 100%; height: 100%; }
+        .joint-link-label { pointer-events: none !important; }
+        .joint-link .label-rect { pointer-events: none !important; }
     </style>
 
     <div id="er-wrapper">
-        <div id="toolbar">
-            <button id="btn-zoom-in" title="Zoom In">＋</button>
-            <button id="btn-zoom-out" title="Zoom Out">−</button>
-            <button id="btn-fit" title="Fit to Screen" style="font-size: 14px;">⊡</button>
-            <button id="btn-reset" title="Reset View" style="font-size: 14px;">↻</button>
+        <div class="controls">
+            <button id="btn-zoom-in" class="control-btn" title="Zoom In">＋</button>
+            <button id="btn-zoom-out" class="control-btn" title="Zoom Out">−</button>
+            <div class="divider"></div>
+            <button id="btn-fit" class="control-btn" title="Reset / Fit View">⟲</button>
         </div>
 
         <div id="paper-container">
@@ -1351,7 +1360,7 @@ private generateERDAssets(ast: Project, outputDir: string): void {
     </div>
 
     <script>
-        // --- INJECTED DATA: This allows the diagram to load instantly without fetch errors ---
+        // --- INJECTED DATA ---
         const embeddedMermaid = ${JSON.stringify(mermaidCode)};
 
         const namespace = joint.shapes;
@@ -1367,22 +1376,16 @@ private generateERDAssets(ast: Project, outputDir: string): void {
             background: { color: 'transparent' },
             cellViewNamespace: namespace,
             interactive: function(cellView) {
-                if (cellView.model.isLink()) {
-                    // Links are completely non-interactive
-                    return false;
-                }
-                // Elements (tables) are draggable
-                return true;
+                if (cellView.model.isLink()) return false; // Links static
+                return true; // Tables draggable
             },
             async: true,
             frozen: true,
             linkPinning: false,
-            defaultLink: function() {
-                return new joint.shapes.standard.Link();
-            }
+            defaultLink: function() { return new joint.shapes.standard.Link(); }
         });
 
-        // Helper function to measure text width accurately
+        // Text Measurement Helper
         function measureText(text, fontSize, fontWeight, fontFamily) {
             if (!text) return 0;
             const canvas = measureText.canvas || (measureText.canvas = document.createElement('canvas'));
@@ -1391,48 +1394,38 @@ private generateERDAssets(ast: Project, outputDir: string): void {
             return context.measureText(text).width;
         }
 
-        // Define custom table shape
+        // Custom Table Shape
         joint.shapes.standard.Rectangle.define('app.ERTable', {
             attrs: {
                 body: { 
                     fill: '#ffffff', 
                     stroke: '#e1e4e8', 
                     strokeWidth: 1,
-                    rx: 6,
-                    ry: 6
+                    rx: 6, 
+                    ry: 6 
                 }
             }
         });
 
-        // Enhanced parser with better error handling
+        // Mermaid Parser
         function parseMermaid(text) {
             const entities = {};
             const relationships = [];
-            // TS ESCAPE: split('\\n')
             const lines = text.split('\\n');
             let currentEntity = null;
 
-            lines.forEach((line, lineNum) => {
+            lines.forEach((line) => {
                 line = line.trim();
-                
-                if(!line || line.startsWith('%%') || line.startsWith('erDiagram')) {
-                    return;
-                }
+                if(!line || line.startsWith('%%') || line.startsWith('erDiagram')) return;
 
-                // Parse relationship - improved regex
-                // TS ESCAPE: Double backslashes for regex string definition
+                // Relationship
                 const relMatch = line.match(/^(\\w+)\\s+([\\|\\}o\\{][|\\-o\\{]{2,}[\\|\\}o\\{])\\s+(\\w+)\\s*:\\s*"?([^"]+)"?$/);
                 if(relMatch) {
-                    relationships.push({ 
-                        from: relMatch[1], 
-                        to: relMatch[3], 
-                        card: relMatch[2], 
-                        label: relMatch[4].trim()
-                    });
+                    relationships.push({ from: relMatch[1], to: relMatch[3], card: relMatch[2], label: relMatch[4].trim() });
                     return; 
                 }
 
-                // Parse entity start
+                // Entity Start
                 const entStart = line.match(/^(\\w+)\\s*\\{$/);
                 if(entStart) {
                     currentEntity = entStart[1];
@@ -1440,54 +1433,40 @@ private generateERDAssets(ast: Project, outputDir: string): void {
                     return;
                 }
                 
-                // Parse entity end
-                if(line === '}') { 
-                    currentEntity = null; 
-                    return; 
-                }
+                // Entity End
+                if(line === '}') { currentEntity = null; return; }
 
-                // Parse attributes - handles multiple quoted strings
+                // Attributes
                 if(currentEntity) {
                     const quotes = [];
                     let quoteMatch;
                     const quoteRegex = /"([^"]*)"/g;
-                    while ((quoteMatch = quoteRegex.exec(line)) !== null) {
-                        quotes.push(quoteMatch[1]);
-                    }
+                    while ((quoteMatch = quoteRegex.exec(line)) !== null) { quotes.push(quoteMatch[1]); }
 
                     const cleanLine = line.replace(/"[^"]*"/g, '').trim();
-                    // TS ESCAPE: split(/\\s+/)
                     const parts = cleanLine.split(/\\s+/).filter(p => p);
 
                     if(parts.length >= 2) {
-                        const type = parts[0];
-                        const name = parts[1];
-                        const constraint = quotes[0] || '';
-                        const description = quotes[1] || '';
-
                         entities[currentEntity].attributes.push({ 
-                            type: type, 
-                            name: name, 
-                            constraint: constraint,
-                            description: description
+                            type: parts[0], 
+                            name: parts[1], 
+                            constraint: quotes[0] || '',
+                            description: quotes[1] || ''
                         });
                     }
                 }
             });
-            
             return { entities, relationships };
         }
 
-        // Build graph with robust sizing
+        // Build Graph Visuals
         function buildGraph(data) {
             graph.clear();
             const cells = [];
             const entityMap = {};
 
             Object.values(data.entities).forEach(ent => {
-                // Measure actual text widths
-                const headerTextWidth = measureText(ent.name, 16, '600', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
-                
+                const headerTextWidth = measureText(ent.name, 16, '600', '-apple-system, sans-serif');
                 let maxNameWidth = Math.max(100, headerTextWidth);
                 let maxTypeWidth = 60;
                 let maxConstraintWidth = 0;
@@ -1495,350 +1474,130 @@ private generateERDAssets(ast: Project, outputDir: string): void {
                 let hasDescription = false;
                 
                 ent.attributes.forEach(attr => {
-                    const nameWidth = measureText(attr.name, 13, '500', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
-                    const typeWidth = measureText(attr.type, 12, 'normal', 'Consolas, Monaco, monospace');
-                    
+                    const nameWidth = measureText(attr.name, 13, '500', '-apple-system, sans-serif');
+                    const typeWidth = measureText(attr.type, 12, 'normal', 'monospace');
                     let constraintWidth = 0;
                     if (attr.constraint) {
-                        const badges = attr.constraint.split(',').map(s => s.trim()).filter(s => s);
-                        badges.forEach(badge => {
-                            constraintWidth += badge.length * 7 + 18;
-                        });
+                        attr.constraint.split(',').forEach(badge => constraintWidth += badge.length * 7 + 18);
                     }
-                    
-                    let descWidth = 0;
                     if (attr.description) {
                         hasDescription = true;
-                        descWidth = measureText(attr.description, 11, 'normal', '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif');
+                        maxDescWidth = Math.max(maxDescWidth, measureText(attr.description, 11, 'normal', '-apple-system, sans-serif'));
                     }
-                    
                     maxNameWidth = Math.max(maxNameWidth, nameWidth);
                     maxTypeWidth = Math.max(maxTypeWidth, typeWidth);
                     maxConstraintWidth = Math.max(maxConstraintWidth, constraintWidth);
-                    maxDescWidth = Math.max(maxDescWidth, descWidth);
                 });
                 
-                // Calculate column widths with padding
                 const nameColWidth = Math.max(160, maxNameWidth + 40 + maxConstraintWidth + 20);
                 const typeColWidth = Math.max(110, maxTypeWidth + 30);
                 const descColWidth = hasDescription ? Math.max(180, Math.min(450, maxDescWidth + 40)) : 0;
-                
                 const totalWidth = nameColWidth + typeColWidth + descColWidth;
-                
                 const headerHeight = 45;
                 const rowHeight = 38;
-                const rowCount = Math.max(1, ent.attributes.length);
-                const totalHeight = headerHeight + (rowCount * rowHeight);
+                const totalHeight = headerHeight + (Math.max(1, ent.attributes.length) * rowHeight);
 
                 const el = new joint.shapes.app.ERTable();
                 el.resize(totalWidth, totalHeight);
-                el.position(0, 0);
-                el.set('id', ent.name);
-
+                
+                // SVG Markup Construction
                 const markup = [];
                 const attrs = {};
-
-                // Body rectangle with shadow
+                
+                // Base
                 markup.push({ tagName: 'rect', selector: 'body' });
-                attrs.body = {
-                    width: totalWidth,
-                    height: totalHeight,
-                    fill: '#ffffff',
-                    stroke: '#d0d7de',
-                    strokeWidth: 1.5,
-                    rx: 8,
-                    ry: 8,
-                    filter: { name: 'dropShadow', args: { dx: 0, dy: 3, blur: 12, opacity: 0.15 } }
-                };
-
-                // Header background
+                attrs.body = { width: totalWidth, height: totalHeight, fill: '#ffffff', stroke: '#d0d7de', strokeWidth: 1.5, rx: 8, ry: 8, filter: { name: 'dropShadow', args: { dx: 0, dy: 3, blur: 12, opacity: 0.15 } } };
+                
+                // Header
                 markup.push({ tagName: 'rect', selector: 'header' });
-                attrs.header = {
-                    width: totalWidth,
-                    height: headerHeight,
-                    fill: '#f6f8fa',
-                    stroke: 'none',
-                    rx: 8,
-                    ry: 8
-                };
-
-                // Header clip to prevent overflow
+                attrs.header = { width: totalWidth, height: headerHeight, fill: '#f6f8fa', stroke: 'none', rx: 8, ry: 8 };
                 markup.push({ tagName: 'rect', selector: 'headerClip' });
-                attrs.headerClip = {
-                    width: totalWidth,
-                    height: headerHeight - 1,
-                    fill: '#f6f8fa',
-                    stroke: 'none',
-                    rx: 0,
-                    ry: 0
-                };
-
-                // Header bottom border
+                attrs.headerClip = { width: totalWidth, height: headerHeight - 1, fill: '#f6f8fa', stroke: 'none' };
                 markup.push({ tagName: 'line', selector: 'headerBorder' });
-                attrs.headerBorder = {
-                    x1: 0,
-                    y1: headerHeight,
-                    x2: totalWidth,
-                    y2: headerHeight,
-                    stroke: '#d0d7de',
-                    strokeWidth: 1.5
-                };
-
-                // Header text
+                attrs.headerBorder = { x1: 0, y1: headerHeight, x2: totalWidth, y2: headerHeight, stroke: '#d0d7de', strokeWidth: 1.5 };
                 markup.push({ tagName: 'text', selector: 'headerText' });
-                attrs.headerText = {
-                    text: ent.name,
-                    x: 16,
-                    y: headerHeight / 2,
-                    textAnchor: 'start',
-                    textVerticalAnchor: 'middle',
-                    fill: '#0969da',
-                    fontSize: 16,
-                    fontWeight: '700',
-                    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
-                };
+                attrs.headerText = { text: ent.name, x: 16, y: headerHeight/2, textAnchor: 'start', textVerticalAnchor: 'middle', fill: '#0969da', fontSize: 16, fontWeight: '700', fontFamily: 'sans-serif' };
 
-                // Vertical line between name and type
+                // Columns
                 markup.push({ tagName: 'line', selector: 'vline1' });
-                attrs.vline1 = {
-                    x1: nameColWidth,
-                    y1: headerHeight,
-                    x2: nameColWidth,
-                    y2: totalHeight,
-                    stroke: '#d0d7de',
-                    strokeWidth: 1
-                };
-
-                // Vertical line between type and description
+                attrs.vline1 = { x1: nameColWidth, y1: headerHeight, x2: nameColWidth, y2: totalHeight, stroke: '#d0d7de', strokeWidth: 1 };
+                
                 if(descColWidth > 0) {
                     markup.push({ tagName: 'line', selector: 'vline2' });
-                    attrs.vline2 = {
-                        x1: nameColWidth + typeColWidth,
-                        y1: headerHeight,
-                        x2: nameColWidth + typeColWidth,
-                        y2: totalHeight,
-                        stroke: '#d0d7de',
-                        strokeWidth: 1
-                    };
+                    attrs.vline2 = { x1: nameColWidth + typeColWidth, y1: headerHeight, x2: nameColWidth + typeColWidth, y2: totalHeight, stroke: '#d0d7de', strokeWidth: 1 };
                 }
 
                 // Rows
                 ent.attributes.forEach((attr, index) => {
                     const y = headerHeight + (index * rowHeight);
-                    
-                    // Horizontal line
                     if (index > 0) {
                         markup.push({ tagName: 'line', selector: \`hline\${index}\` });
-                        attrs[\`hline\${index}\`] = {
-                            x1: 0,
-                            y1: y,
-                            x2: totalWidth,
-                            y2: y,
-                            stroke: '#eaeef2',
-                            strokeWidth: 1
-                        };
+                        attrs[\`hline\${index}\`] = { x1: 0, y1: y, x2: totalWidth, y2: y, stroke: '#eaeef2', strokeWidth: 1 };
                     }
 
-                    // Constraint badges
+                    // Badges
                     if (attr.constraint) {
-                        const badges = attr.constraint.split(',').map(s => s.trim()).filter(s => s);
-                        
                         let badgeX = nameColWidth - 12;
-                        badges.reverse().forEach((badge, bIndex) => {
+                        attr.constraint.split(',').map(s=>s.trim()).filter(s=>s).reverse().forEach((badge, bIndex) => {
                             const badgeWidth = badge.length * 7 + 12;
                             badgeX -= badgeWidth;
+                            let color = badge.includes('PK') ? '#ffd7d7' : (badge.includes('FK') ? '#e3f2fd' : '#f0f0f0');
+                            let textColor = badge.includes('PK') ? '#d32f2f' : (badge.includes('FK') ? '#1565c0' : '#666');
                             
-                            let badgeColor = '#f0f0f0';
-                            let textColor = '#666';
-                            
-                            if(badge.includes('PK')) {
-                                badgeColor = '#ffd7d7';
-                                textColor = '#d32f2f';
-                            } else if(badge.includes('FK')) {
-                                badgeColor = '#e3f2fd';
-                                textColor = '#1565c0';
-                            } else if(badge.includes('UK') || badge.includes('UNIQUE')) {
-                                badgeColor = '#fff3e0';
-                                textColor = '#ef6c00';
-                            } else if(badge.includes('NOT NULL')) {
-                                badgeColor = '#e8f5e9';
-                                textColor = '#2e7d32';
-                            }
-                            
-                            // Badge background
-                            markup.push({ tagName: 'rect', selector: \`constraintBg\${index}_\${bIndex}\` });
-                            attrs[\`constraintBg\${index}_\${bIndex}\`] = {
-                                x: badgeX,
-                                y: y + rowHeight / 2 - 9,
-                                width: badgeWidth,
-                                height: 18,
-                                fill: badgeColor,
-                                stroke: 'none',
-                                rx: 3,
-                                ry: 3
-                            };
-                            
-                            // Badge text
-                            markup.push({ tagName: 'text', selector: \`constraint\${index}_\${bIndex}\` });
-                            attrs[\`constraint\${index}_\${bIndex}\`] = {
-                                text: badge,
-                                x: badgeX + badgeWidth / 2,
-                                y: y + rowHeight / 2,
-                                textAnchor: 'middle',
-                                textVerticalAnchor: 'middle',
-                                fill: textColor,
-                                fontSize: 10,
-                                fontWeight: '700',
-                                fontFamily: 'Consolas, Monaco, monospace'
-                            };
-                            
+                            markup.push({ tagName: 'rect', selector: \`bg\${index}_\${bIndex}\` });
+                            attrs[\`bg\${index}_\${bIndex}\`] = { x: badgeX, y: y + rowHeight/2 - 9, width: badgeWidth, height: 18, fill: color, rx: 3 };
+                            markup.push({ tagName: 'text', selector: \`txt\${index}_\${bIndex}\` });
+                            attrs[\`txt\${index}_\${bIndex}\`] = { text: badge, x: badgeX + badgeWidth/2, y: y + rowHeight/2, textAnchor: 'middle', textVerticalAnchor: 'middle', fill: textColor, fontSize: 10, fontWeight: '700', fontFamily: 'monospace' };
                             badgeX -= 6;
                         });
                     }
 
-                    // Attribute name
-                    markup.push({ tagName: 'text', selector: \`name\${index}\` });
-                    attrs[\`name\${index}\`] = {
-                        text: attr.name,
-                        x: 16,
-                        y: y + rowHeight / 2,
-                        textAnchor: 'start',
-                        textVerticalAnchor: 'middle',
-                        fill: '#24292f',
-                        fontSize: 13,
-                        fontWeight: '600',
-                        fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
-                    };
+                    // Text
+                    markup.push({ tagName: 'text', selector: \`n\${index}\` });
+                    attrs[\`n\${index}\`] = { text: attr.name, x: 16, y: y + rowHeight/2, textVerticalAnchor: 'middle', fill: '#24292f', fontSize: 13, fontWeight: '600', fontFamily: 'sans-serif' };
+                    
+                    markup.push({ tagName: 'text', selector: \`t\${index}\` });
+                    attrs[\`t\${index}\`] = { text: attr.type, x: nameColWidth + 12, y: y + rowHeight/2, textVerticalAnchor: 'middle', fill: '#57606a', fontSize: 12, fontFamily: 'monospace' };
 
-                    // Type
-                    markup.push({ tagName: 'text', selector: \`type\${index}\` });
-                    attrs[\`type\${index}\`] = {
-                        text: attr.type,
-                        x: nameColWidth + 12,
-                        y: y + rowHeight / 2,
-                        textAnchor: 'start',
-                        textVerticalAnchor: 'middle',
-                        fill: '#57606a',
-                        fontSize: 12,
-                        fontFamily: 'Consolas, Monaco, monospace'
-                    };
-
-                    // Description
                     if(attr.description && descColWidth > 0) {
-                        const maxDescChars = Math.floor((descColWidth - 30) / 6);
-                        const descText = attr.description.length > maxDescChars 
-                            ? attr.description.substring(0, maxDescChars - 3) + '...' 
-                            : attr.description;
-                        
-                        markup.push({ tagName: 'text', selector: \`desc\${index}\` });
-                        attrs[\`desc\${index}\`] = {
-                            text: descText,
-                            x: nameColWidth + typeColWidth + 12,
-                            y: y + rowHeight / 2,
-                            textAnchor: 'start',
-                            textVerticalAnchor: 'middle',
-                            fill: '#656d76',
-                            fontSize: 11,
-                            fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
-                        };
+                        const chars = Math.floor((descColWidth - 30) / 6);
+                        const txt = attr.description.length > chars ? attr.description.substring(0, chars - 3) + '...' : attr.description;
+                        markup.push({ tagName: 'text', selector: \`d\${index}\` });
+                        attrs[\`d\${index}\`] = { text: txt, x: nameColWidth + typeColWidth + 12, y: y + rowHeight/2, textVerticalAnchor: 'middle', fill: '#656d76', fontSize: 11, fontFamily: 'sans-serif' };
                     }
                 });
 
                 el.set('markup', markup);
                 el.attr(attrs);
-
                 cells.push(el);
                 entityMap[ent.name] = el;
             });
 
-            // Build links with fixed labels
-            const linkColors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
-            let colorIndex = 0;
+            // Relationships
+            const colors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+            let colorIdx = 0;
 
             data.relationships.forEach(rel => {
-                const source = entityMap[rel.from];
-                const target = entityMap[rel.to];
+                const s = entityMap[rel.from], t = entityMap[rel.to];
+                if(!s || !t) return;
+                const col = colors[colorIdx++ % colors.length];
                 
-                if(!source || !target) {
-                    console.warn(\`Relationship references non-existent table: \${rel.from} -> \${rel.to}\`);
-                    return;
-                }
-
-                const linkColor = linkColors[colorIndex % linkColors.length];
-                colorIndex++;
-
                 const link = new joint.shapes.standard.Link({
-                    source: { id: source.id },
-                    target: { id: target.id },
-                    router: { 
-                        name: 'manhattan', 
-                        args: { 
-                            step: 15,
-                            padding: 20
-                        } 
-                    },
-                    connector: { 
-                        name: 'rounded', 
-                        args: { 
-                            radius: 12 
-                        } 
-                    },
-                    attrs: {
-                        line: { 
-                            stroke: linkColor, 
-                            strokeWidth: 2.5,
-                            strokeDasharray: '0',
-                            targetMarker: {
-                                type: 'path',
-                                d: 'M 10 -5 0 0 10 5 z',
-                                fill: linkColor,
-                                stroke: linkColor
-                            }
-                        }
-                    }
+                    source: { id: s.id }, target: { id: t.id },
+                    router: { name: 'manhattan', args: { step: 15, padding: 20 } },
+                    connector: { name: 'rounded', args: { radius: 12 } },
+                    attrs: { line: { stroke: col, strokeWidth: 2.5, targetMarker: { type: 'path', d: 'M 10 -5 0 0 10 5 z', fill: col, stroke: col } } }
                 });
 
-                // Add FIXED label
                 if(rel.label) {
                     link.appendLabel({
                         attrs: {
-                            text: { 
-                                text: rel.label, 
-                                fill: linkColor, 
-                                fontSize: 12, 
-                                fontWeight: '700',
-                                fontFamily: '-apple-system, sans-serif',
-                                pointerEvents: 'none'
-                            },
-                            rect: { 
-                                fill: 'white', 
-                                stroke: linkColor, 
-                                strokeWidth: 2, 
-                                rx: 6, 
-                                ry: 6,
-                                ref: 'text',
-                                refWidth: '150%',
-                                refHeight: '180%',
-                                refX: '-25%',
-                                refY: '-40%',
-                                pointerEvents: 'none'
-                            }
+                            text: { text: rel.label, fill: col, fontSize: 12, fontWeight: '700', fontFamily: 'sans-serif', pointerEvents: 'none' },
+                            rect: { fill: 'white', stroke: col, strokeWidth: 2, rx: 6, ry: 6, ref: 'text', refWidth: '150%', refHeight: '180%', refX: '-25%', refY: '-40%' }
                         },
-                        position: { 
-                            distance: 0.5,
-                            offset: 0
-                        }
-                    });
-
-                    // Make label completely non-movable
-                    link.label(0, {
-                        position: {
-                            distance: 0.5,
-                            offset: 0
-                        }
+                        position: { distance: 0.5 }
                     });
                 }
-                
                 cells.push(link);
             });
 
@@ -1846,170 +1605,54 @@ private generateERDAssets(ast: Project, outputDir: string): void {
             layoutGraph();
         }
 
-        // Layout with dagre
+        // Dagre Layout
         function layoutGraph() {
             const g = new dagre.graphlib.Graph();
-            g.setGraph({ 
-                rankdir: 'LR',
-                nodesep: 100,
-                ranksep: 180,
-                marginx: 80, 
-                marginy: 80,
-                edgesep: 30
-            });
+            g.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 180, marginx: 80, marginy: 80 });
             g.setDefaultEdgeLabel(() => ({}));
 
-            graph.getElements().forEach(el => {
-                g.setNode(el.id, { 
-                    width: el.size().width, 
-                    height: el.size().height 
-                });
-            });
-            
-            graph.getLinks().forEach(link => {
-                const sourceId = link.source().id;
-                const targetId = link.target().id;
-                if (sourceId && targetId) {
-                    g.setEdge(sourceId, targetId);
-                }
-            });
+            graph.getElements().forEach(el => g.setNode(el.id, { width: el.size().width, height: el.size().height }));
+            graph.getLinks().forEach(l => { if(l.source().id && l.target().id) g.setEdge(l.source().id, l.target().id); });
 
             dagre.layout(g);
-
-            graph.getElements().forEach(el => {
-                const node = g.node(el.id);
-                if (node) {
-                    el.position(node.x - node.width / 2, node.y - node.height / 2);
-                }
-            });
+            graph.getElements().forEach(el => { const n = g.node(el.id); if(n) el.position(n.x - n.width/2, n.y - n.height/2); });
             
             paper.unfreeze();
-            
-            setTimeout(() => {
-                fitToScreen();
-            }, 100);
+            setTimeout(fitToScreen, 100);
         }
 
-        // Fit to screen function
         function fitToScreen() {
-            try {
-                paper.scaleContentToFit({ 
-                    padding: 60, 
-                    maxScale: 1.2,
-                    minScale: 0.05,
-                    useModelGeometry: true
-                });
-                scale = paper.scale().sx;
-            } catch (e) {
-                console.error('Error fitting to screen:', e);
-            }
+            try { paper.scaleContentToFit({ padding: 60, maxScale: 1.2, minScale: 0.05, useModelGeometry: true }); scale = paper.scale().sx; } catch (e) {}
         }
-
-        // Load default or from file
-        function loadDefault() {
-            try {
-                // MODIFIED: Use the injected variable instead of fetch
-                if (embeddedMermaid) {
-                    paper.freeze();
-                    const parsed = parseMermaid(embeddedMermaid);
-                    buildGraph(parsed);
-                } else {
-                    // Fallback to sample
-                    const sampleMMD = \`erDiagram
-    dim_customers {
-        INTEGER customer_id "PK, AUTO_INCREMENT" "Surrogate key for customer dimension"
-        VARCHAR(255) email "UK, NOT NULL" "Primary email address normalized to lowercase"
-        VARCHAR(200) full_name "NOT NULL" "Customer full name first and last"
-        VARCHAR(500) address_street "" "Street address"
-        VARCHAR(100) address_city "" "City"
-        VARCHAR(20) postal_code "" "ZIP or Postal code"
-    }
-    fact_orders {
-        INTEGER order_id "PK, AUTO_INCREMENT" "Unique order identifier"
-        INTEGER customer_id "FK, NOT NULL" "Foreign key to dim_customers"
-        TIMESTAMP order_date "NOT NULL" "Order placement date"
-        DECIMAL(10,2) total_amount "NOT NULL" "Total order amount in USD"
-        VARCHAR(50) status "NOT NULL" "Order status pending completed cancelled"
-    }
-    dim_customers ||--o{ fact_orders : "fk_orders_customer"\`;
-            
-                    paper.freeze();
-                    const parsed = parseMermaid(sampleMMD);
-                    buildGraph(parsed);
-                }
-            } catch (error) {
-                console.log('Error loading diagram', error);
-            }
-        }
-
-        // Zoom controls
-        let scale = 1;
-        
-        document.getElementById('btn-zoom-in').onclick = () => { 
-            scale = Math.min(3, scale + 0.15); 
-            paper.scale(scale, scale);
-        };
-        
-        document.getElementById('btn-zoom-out').onclick = () => { 
-            scale = Math.max(0.1, scale - 0.15); 
-            paper.scale(scale, scale);
-        };
-        
-        document.getElementById('btn-fit').onclick = () => { 
-            fitToScreen();
-        };
-
-        document.getElementById('btn-reset').onclick = () => {
-            paper.translate(0, 0);
-            fitToScreen();
-        };
-
-        // Panning functionality
-        let panning = false;
-        let panStart = {x: 0, y: 0};
-        const container = document.getElementById('paper-container');
-        
-        paper.on('blank:pointerdown', (evt) => {
-            panning = true;
-            panStart = { x: evt.clientX, y: evt.clientY };
-            container.classList.add('grabbing');
-        });
-        
-        document.addEventListener('mousemove', (evt) => {
-            if(!panning) return;
-            const dx = evt.clientX - panStart.x;
-            const dy = evt.clientY - panStart.y;
-            panStart = { x: evt.clientX, y: evt.clientY };
-            const current = paper.translate();
-            paper.translate(current.tx + dx, current.ty + dy);
-        });
-        
-        document.addEventListener('mouseup', () => { 
-            panning = false; 
-            container.classList.remove('grabbing'); 
-        });
-
-        // Mouse wheel zoom
-        container.addEventListener('wheel', (evt) => {
-            evt.preventDefault();
-            const delta = evt.deltaY > 0 ? -0.1 : 0.1;
-            scale = Math.max(0.1, Math.min(3, scale + delta));
-            paper.scale(scale, scale);
-        }, { passive: false });
-
-        // Prevent text selection while dragging
-        document.addEventListener('selectstart', (e) => {
-            if (panning) e.preventDefault();
-        });
 
         // Initialize
-        loadDefault();
+        if (embeddedMermaid) {
+            paper.freeze();
+            buildGraph(parseMermaid(embeddedMermaid));
+        }
+
+        // --- INTERACTION ---
+        let scale = 1;
+        document.getElementById('btn-zoom-in').onclick = () => { scale = Math.min(3, scale + 0.15); paper.scale(scale, scale); };
+        document.getElementById('btn-zoom-out').onclick = () => { scale = Math.max(0.1, scale - 0.15); paper.scale(scale, scale); };
+        document.getElementById('btn-fit').onclick = () => { fitToScreen(); paper.translate(0,0); };
+
+        // Panning
+        let panning = false, panStart = {x:0, y:0};
+        const cont = document.getElementById('paper-container');
+        paper.on('blank:pointerdown', (evt) => { panning=true; panStart={x:evt.clientX, y:evt.clientY}; cont.classList.add('grabbing'); });
+        document.addEventListener('mousemove', (evt) => {
+            if(!panning) return;
+            const dx = evt.clientX - panStart.x, dy = evt.clientY - panStart.y;
+            panStart = {x:evt.clientX, y:evt.clientY};
+            const cur = paper.translate();
+            paper.translate(cur.tx + dx, cur.ty + dy);
+        });
+        document.addEventListener('mouseup', () => { panning=false; cont.classList.remove('grabbing'); });
+        cont.addEventListener('wheel', (e) => { e.preventDefault(); const d = e.deltaY>0?-0.1:0.1; scale=Math.max(0.1,Math.min(3,scale+d)); paper.scale(scale,scale); }, {passive:false});
     </script>
     `;
 
-    fs.writeFileSync(
-        path.join(outputDir, 'erd.html'), 
-        this.getPageLayout(ast, 'ER Diagram', content, 'erd')
-    );
+    fs.writeFileSync(path.join(outputDir, 'erd.html'), this.getPageLayout(ast, 'ER Diagram', content, 'erd'));
   }
 }
