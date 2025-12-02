@@ -1,0 +1,38 @@
+# Source files (only ship compiled code)
+src/
+*.ts
+!*.d.ts
+
+# Test and example files
+examples/
+output/
+docs/
+test/
+
+# Development files
+tsconfig.json
+.vscode/
+.idea/
+
+# Node modules
+node_modules/
+
+# Git files
+.git/
+.gitignore
+
+# CI/CD
+.github/
+.travis.yml
+.gitlab-ci.yml
+
+# Documentation (README.md is included by default)
+*.md
+!README.md
+
+# Temporary files
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
