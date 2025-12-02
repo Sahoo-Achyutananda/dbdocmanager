@@ -214,7 +214,14 @@ The tool generates:
 **Course:** Software Systems Development  
 **Team Size:** 5 members  
 **Package:** dbdocmanager_ssd  
-**Point of Contact:** Sai Anirudh Karre (saianirudh.karre@iiit.ac.in)
+**Point of Contact:** 
+Team Members :
+- Achyutananda Sahoo
+- Satyajit Priyadarshi
+- Abhijith Sangarsu
+- Swaraj Kumar
+- Ameya Purohit
+Guide : Sai Anirudh Karre
 
 ## License
 
