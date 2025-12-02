@@ -30,54 +30,44 @@ export class ERGenerator {
           const safeTableDesc = table.description.replace(/\n/g, ' ');
           mermaidCode += `  %% ${safeTableDesc}\n`;
         }
-        mermaidCode += `  ${table.name} {\n`;
-        
-        table.columns.forEach(column => {
-          // Separate standard Mermaid keys (PK, FK, UK) from other constraints
-          const keys: string[] = [];
-          const otherConstraints: string[] = [];
 
-          if (column.pk) keys.push('PK');
-          if (foreignKeyMap.has(`${table.name}.${column.name}`)) keys.push('FK');
-          if (column.unique) keys.push('UK');
-          
-          if (column.nullable === false) otherConstraints.push('NOT NULL');
-          if (column.auto_increment) otherConstraints.push('AUTO_INC');
-          
-          // Mermaid Syntax: type name [PK,FK] "comment"
-          // We must NOT quote the PK/FK part, and we must ONLY have one quoted string at the end.
-          
+        mermaidCode += `  ${table.name} {\n`;
+
+        table.columns.forEach(column => {
+          // Collect all attributes (keys and constraints)
+          const attributes: string[] = [];
+
+          if (column.pk) attributes.push('PK');
+          if (foreignKeyMap.has(`${table.name}.${column.name}`)) attributes.push('FK');
+          if (column.unique) attributes.push('UK');
+          if (column.nullable === false) attributes.push('NOT NULL');
+          if (column.auto_increment) attributes.push('AUTO_INC');
+
+          // Mermaid Syntax: type name "PK,FK,NOT NULL" "comment"
           // 1. Type & Name
           // Replace spaces in type with underscores to prevent parsing errors
           let columnDef = `    ${column.type.replace(/\s+/g, '_')} ${column.name}`;
-          
-          // 2. Keys (PK, FK, UK) - Unquoted, comma-separated
-          if (keys.length > 0) {
-            columnDef += ` ${keys.join(',')}`;
+
+          // 2. All attributes together (quoted and comma-separated)
+          // Always add quotes, even if empty
+          if (attributes.length > 0) {
+            columnDef += ` "${attributes.join(', ')}"`;
+          } else {
+            columnDef += ` ""`;
           }
 
-          // 3. Comment (Description + Other Constraints)
-          let commentParts: string[] = [];
-          
-          // Add non-key constraints to the comment (e.g., "[NOT NULL]")
-          if (otherConstraints.length > 0) {
-            commentParts.push(`[${otherConstraints.join(', ')}]`);
-          }
-          
-          // Add user description
+          // 3. Description (in separate quotes)
           if (column.description) {
             // Escape double quotes and remove newlines
             const safeDesc = column.description.replace(/"/g, "'").replace(/\n/g, " ");
-            commentParts.push(safeDesc);
-          }
-
-          // Append combined comment if exists
-          if (commentParts.length > 0) {
-            columnDef += ` "${commentParts.join(' ')}"`;
+            columnDef += ` "${safeDesc}"`;
+          } else {
+            columnDef += ` ""`;
           }
 
           mermaidCode += columnDef + '\n';
         });
+
         mermaidCode += '  }\n\n';
       });
     });

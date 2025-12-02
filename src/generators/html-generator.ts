@@ -53,7 +53,7 @@ export class HTMLGenerator {
     <aside class="sidebar">
       <div class="brand">
         <div class="logo-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          <svg width="50" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
         </div>
         <div class="brand-text">${ast.project}</div>
       </div>
@@ -62,16 +62,16 @@ export class HTMLGenerator {
         <div class="nav-section">
           <span class="nav-header">Overview</span>
           <a href="index.html" class="nav-item ${activeLink === 'home' ? 'active' : ''}">
-             <span class="icon">🏠</span> Dashboard
+             <span class="icon"></span> Dashboard
           </a>
           <a href="erd.html" class="nav-item ${activeLink === 'erd' ? 'active' : ''}">
-              <span class="icon">📐</span> ER Diagram
+              <span class="icon"></span> ER Diagram
           </a>
           <a href="lineage.html" class="nav-item ${activeLink === 'lineage-table' ? 'active' : ''}">
-             <span class="icon">🔢</span> Lineage Matrix
+             <span class="icon"></span> Lineage Matrix
           </a>
           <a href="lineage-graph.html" class="nav-item ${activeLink === 'lineage-graph' ? 'active' : ''}">
-             <span class="icon">🕸️</span> Visual Graph
+             <span class="icon"></span> Visual Graph
           </a>
         </div>
 
@@ -1210,11 +1210,10 @@ function downloadCSV() {
                 <button class="btn-primary">📂 Load .mmd File</button>
                 <input type="file" id="file-input" accept=".mmd,.txt">
             </div>
-            <button id="btn-zoom-in">🔍 Zoom In</button>
-            <button id="btn-zoom-out">🔎 Zoom Out</button>
-            <button id="btn-fit">⊡ Fit to Screen</button>
-            <button id="btn-reset">↻ Reset View</button>
-             <a href="schema.mmd" download style="margin-left:10px; font-size:12px; color:#0969da; text-decoration:none;">Download .mmd</a>
+            <button id="btn-zoom-in">🔍</button>
+            <button id="btn-zoom-out">🔎</button>
+            <button id="btn-fit">⊡</button>
+            <button id="btn-reset">↻</button>
         </div>
 
         <div id="paper-container">
