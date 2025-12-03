@@ -1,0 +1,254 @@
+{
+  "project": "ecommerce_with_array_explosion",
+  "version": "2.0.0",
+  "description": "E-commerce analytics demonstrating array explosion from MongoDB to relational tables",
+  "owners": ["data-engineering@company.com"],
+  
+  "targets": [
+    {
+      "db": "warehouse",
+      "engine": "postgres",
+      "schema": "public",
+      "tables": [
+        {
+          "name": "dim_customers",
+          "description": "Customer dimension",
+          "columns": [
+            {
+              "name": "customer_id",
+              "type": "INTEGER",
+              "pk": true,
+              "auto_increment": true,
+              "description": "Surrogate key"
+            },
+            {
+              "name": "email",
+              "type": "VARCHAR(255)",
+              "unique": true,
+              "nullable": false,
+              "description": "Customer email"
+            },
+            {
+              "name": "full_name",
+              "type": "VARCHAR(200)",
+              "nullable": false,
+              "description": "Full name"
+            }
+          ]
+        },
+        {
+          "name": "fact_orders",
+          "description": "Order header information",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INTEGER",
+              "pk": true,
+              "description": "Order identifier from source"
+            },
+            {
+              "name": "customer_id",
+              "type": "INTEGER",
+              "nullable": false,
+              "description": "FK to dim_customers"
+            },
+            {
+              "name": "order_date",
+              "type": "TIMESTAMP",
+              "nullable": false,
+              "description": "Order placement timestamp"
+            },
+            {
+              "name": "status",
+              "type": "VARCHAR(50)",
+              "nullable": false,
+              "description": "Order status"
+            }
+          ],
+          "foreign_keys": [
+            {
+              "name": "fk_orders_customer",
+              "columns": ["customer_id"],
+              "references": {
+                "table": "dim_customers",
+                "columns": ["customer_id"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "fact_order_lines",
+          "description": "Order line items - EXPLODED from MongoDB lines array",
+          "columns": [
+            {
+              "name": "order_id",
+              "type": "INTEGER",
+              "nullable": false,
+              "description": "FK to fact_orders"
+            },
+            {
+              "name": "line_number",
+              "type": "INTEGER",
+              "nullable": false,
+              "description": "Line item sequence number (from array index)"
+            },
+            {
+              "name": "product_sku",
+              "type": "VARCHAR(50)",
+              "nullable": false,
+              "description": "Product SKU"
+            },
+            {
+              "name": "product_name",
+              "type": "VARCHAR(255)",
+              "nullable": false,
+              "description": "Product display name"
+            },
+            {
+              "name": "quantity",
+              "type": "INTEGER",
+              "nullable": false,
+              "description": "Quantity ordered"
+            },
+            {
+              "name": "unit_price",
+              "type": "DECIMAL(10,2)",
+              "nullable": false,
+              "description": "Price per unit in USD"
+            },
+            {
+              "name": "discount_percent",
+              "type": "DECIMAL(5,2)",
+              "description": "Discount percentage applied"
+            },
+            {
+              "name": "line_total",
+              "type": "DECIMAL(10,2)",
+              "nullable": false,
+              "description": "Total amount for this line (calculated)"
+            }
+          ],
+          "foreign_keys": [
+            {
+              "name": "fk_lines_order",
+              "columns": ["order_id"],
+              "references": {
+                "table": "fact_orders",
+                "columns": ["order_id"]
+              }
+            }
+          ],
+          "indexes": [
+            {
+              "name": "idx_order_line",
+              "columns": ["order_id", "line_number"],
+              "unique": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  
+  "sources": [
+    {
+      "id": "mongo_customers",
+      "kind": "mongodb",
+      "connection": "mongodb://prod-cluster:27017",
+      "db": "ecommerce",
+      "collection": "customers",
+      "description": "Customer profiles in MongoDB"
+    },
+    {
+      "id": "mongo_orders",
+      "kind": "mongodb",
+      "connection": "mongodb://prod-cluster:27017",
+      "db": "ecommerce",
+      "collection": "orders",
+      "description": "Orders with embedded line items array - Structure: { _id, customerId, orderDate, status, lines: [ {sku, name, qty, price, discount}, ... ] }"
+    }
+  ],
+  
+  "mappings": [
+    {
+      "target": "warehouse.public.dim_customers.customer_id",
+      "from": {
+        "source_id": "mongo_customers",
+        "path": "$._id",
+        "transform": "toInteger()"
+      },
+      "description": "MongoDB ObjectID to integer"
+    },
+    {
+      "target": "warehouse.public.dim_customers.email",
+      "from": {
+        "source_id": "mongo_customers",
+        "path": "$.email",
+        "transform": "LOWER(TRIM())"
+      },
+      "description": "Normalized email"
+    },
+    {
+      "target": "warehouse.public.dim_customers.full_name",
+      "from": {
+        "source_id": "mongo_customers",
+        "path": "$.profile",
+        "transform": "CONCAT($.firstName, ' ', $.lastName)"
+      },
+      "description": "Concatenated name"
+    },
+    {
+      "target": "warehouse.public.fact_orders.order_id",
+      "from": {
+        "source_id": "mongo_orders",
+        "path": "$._id",
+        "transform": "toInteger()"
+      },
+      "description": "Order ID from MongoDB"
+    },
+    {
+      "target": "warehouse.public.fact_orders.customer_id",
+      "from": {
+        "source_id": "mongo_orders",
+        "path": "$.customerId"
+      },
+      "description": "Customer reference"
+    },
+    {
+      "target": "warehouse.public.fact_orders.order_date",
+      "from": {
+        "source_id": "mongo_orders",
+        "path": "$.createdAt",
+        "transform": "CAST(TIMESTAMP)"
+      },
+      "description": "Order timestamp"
+    },
+    {
+      "target": "warehouse.public.fact_orders.status",
+      "from": {
+        "source_id": "mongo_orders",
+        "path": "$.status"
+      },
+      "description": "Order status"
+    },
+    {
+      "target": "warehouse.public.fact_order_lines.*",
+      "from": {
+        "source_id": "mongo_orders",
+        "path": "$.lines[*]",
+        "is_array_explosion": true,
+        "fields": {
+          "order_id": "$.order_id",
+          "line_number": "$index",
+          "product_sku": "$.sku",
+          "product_name": "$.name",
+          "quantity": "$.qty",
+          "unit_price": "$.price",
+          "discount_percent": "$.discount",
+          "line_total": "CALC($.qty * $.price * (1 - COALESCE($.discount, 0) / 100))"
+        }
+      },
+      "description": "⚡ ARRAY EXPLOSION: Each element in the 'lines' array becomes a separate row in fact_order_lines. The $index variable represents the 0-based position in the array."
+    }
+  ]
+}

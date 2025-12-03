@@ -462,6 +462,10 @@ function downloadCSV() {
 
   private generateTablePage(ast: Project, target: any, table: Table, outputDir: string): void {
     const mappings = this.getTableMappings(ast, target, table);
+    
+    // NEW: Get array explosion mappings for this table
+    const arrayExplosions = this.getArrayExplosionMappings(ast, target, table);
+    
     const content = `
       <header class="page-header">
         <div>
@@ -477,6 +481,7 @@ function downloadCSV() {
         </div>
       ` : ''}
 
+      <!-- SCHEMA DEFINITION -->
       <div class="card">
         <div class="card-title">Schema Definition</div>
         <div class="table-responsive">
@@ -508,6 +513,51 @@ function downloadCSV() {
         </div>
       </div>
 
+      <!-- ARRAY EXPLOSION MAPPINGS (if any) -->
+      ${arrayExplosions.length > 0 ? `
+        <div class="card" style="margin-top: 2rem;">
+          <div class="card-title">
+            🔄 Array Explosion Mappings
+            <span class="badge" style="background: #e0f2fe; color: #0284c7; font-size: 0.8rem; margin-left: 10px;">
+              ${arrayExplosions.length} explosion(s)
+            </span>
+          </div>
+          ${arrayExplosions.map(exp => `
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+              <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <span class="badge source">${exp.sourceId}</span>
+                <span style="color: #64748b;">→</span>
+                <code class="code-pill" style="background: #f0f9ff; color: #0369a1; border-color: #bae6fd;">
+                  ${exp.arrayPath}
+                </code>
+              </div>
+              <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 15px;">
+                ${exp.description || 'Explodes array into individual rows'}
+              </p>
+              <div class="table-responsive">
+                <table class="data-table" style="font-size: 0.85rem;">
+                  <thead>
+                    <tr>
+                      <th>Target Column</th>
+                      <th>Source Field</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${Object.entries(exp.fields).map(([targetCol, sourcePath]) => `
+                      <tr>
+                        <td class="font-mono font-bold">${targetCol}</td>
+                        <td class="font-mono text-purple">${sourcePath}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <!-- REGULAR MAPPINGS -->
       ${mappings.length > 0 ? `
         <div class="card" style="margin-top: 2rem;">
           <div class="card-title">Lineage & Mappings</div>
@@ -539,6 +589,28 @@ function downloadCSV() {
 
     const fileName = this.getTableFileName(target.db, table.name);
     fs.writeFileSync(path.join(outputDir, fileName), this.getPageLayout(ast, table.name, content, table.name));
+  }
+
+  // NEW: Helper to get array explosion mappings
+  private getArrayExplosionMappings(ast: Project, target: any, table: Table): any[] {
+    const explosions = [];
+    const tableFqn = `${target.db}.${target.schema || 'public'}.${table.name}`;
+    
+    for (const mapping of ast.mappings) {
+      if (mapping.from.is_array_explosion || mapping.target.endsWith('.*')) {
+        const targetBase = mapping.target.replace('.*', '');
+        if (targetBase === tableFqn && mapping.from.fields) {
+          explosions.push({
+            sourceId: mapping.from.source_id,
+            arrayPath: mapping.from.path,
+            fields: mapping.from.fields,
+            description: mapping.description
+          });
+        }
+      }
+    }
+    
+    return explosions;
   }
 
 private generateLineagePage(ast: Project, outputDir: string): void {

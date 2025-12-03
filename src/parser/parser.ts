@@ -52,14 +52,14 @@ export class DBDocParser {
   }
 
   private parseTargets(targets: any[]): Target[] {  // ← Change return type from any[] to Target[]
-    return targets.map((target: any): Target => ({  // ← Add explicit types
+    return targets.map((target: any): Target => ({ 
       db: target.db,
       engine: target.engine,
       schema: target.schema,
-      tables: (target.tables || []).map((table: any): Table => ({  // ← Add explicit types
+      tables: (target.tables || []).map((table: any): Table => ({
         name: table.name,
         description: table.description,
-        columns: (table.columns || []).map((col: any): Column => ({  // ← Add explicit types
+        columns: (table.columns || []).map((col: any): Column => ({  
           name: col.name,
           type: col.type,
           nullable: col.nullable !== false,
@@ -76,8 +76,8 @@ export class DBDocParser {
     }));
   }
 
-  private parseSources(sources: any[]): Source[] {  // ← Change return type from any[] to Source[]
-    return sources.map((source: any): Source => ({  // ← Add explicit types
+  private parseSources(sources: any[]): Source[] {  
+    return sources.map((source: any): Source => ({  
       id: source.id,
       kind: source.kind,
       connection: source.connection,
@@ -87,15 +87,21 @@ export class DBDocParser {
     }));
   }
 
-  private parseMappings(mappings: any[]): Mapping[] {  // ← Change return type from any[] to Mapping[]
-    return mappings.map((mapping: any): Mapping => ({  // ← Add explicit types
-      target: mapping.target,
-      from: {
-        source_id: mapping.from?.source_id,
-        path: mapping.from?.path,
-        transform: mapping.from?.transform
-      },
-      description: mapping.description
-    }));
+  private parseMappings(mappings: any[]): Mapping[] {
+    return mappings.map((mapping: any): Mapping => {
+      const isArrayExplosion = mapping.target.endsWith('.*');
+      
+      return {
+        target: mapping.target,
+        from: {
+          source_id: mapping.from?.source_id,
+          path: mapping.from?.path,
+          transform: mapping.from?.transform,
+          is_array_explosion: isArrayExplosion || mapping.from?.is_array_explosion || false,
+          fields: mapping.from?.fields || undefined
+        },
+        description: mapping.description
+      };
+    });
   }
 }

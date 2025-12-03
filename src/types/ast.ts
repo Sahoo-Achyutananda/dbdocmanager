@@ -89,14 +89,17 @@ export interface Source {
  * Column-level mapping (lineage)
  */
 export interface Mapping {
-  target: string; // Fully qualified: db.schema.table.column
+  target: string; 
   from: {
     source_id: string;
     path: string;
     transform?: string;
+    is_array_explosion?: boolean;
+    fields?: { [key: string]: string };
   };
   description?: string;
 }
+
 
 /**
  * Validation result

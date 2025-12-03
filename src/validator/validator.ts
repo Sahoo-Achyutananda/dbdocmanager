@@ -117,19 +117,68 @@ export class DBDocValidator {
 
   private validateMappings(ast: Project): ValidationError[] {
     const errors: ValidationError[] = [];
-
-    // Build index of all targets and sources
     const targetIndex = this.buildTargetIndex(ast);
     const sourceIds = new Set(ast.sources.map(s => s.id));
 
     for (const mapping of ast.mappings) {
-      // Validate target exists
-      if (!targetIndex.has(mapping.target)) {
-        errors.push({
-          type: 'INVALID_MAPPING_TARGET',
-          message: `Mapping target not found: ${mapping.target}`,
-          location: mapping.target
-        });
+      // Handle array explosion targets (ending with .*)
+      if (mapping.from.is_array_explosion || mapping.target.endsWith('.*')) {
+        // Validate that fields are provided for array explosion
+        if (!mapping.from.fields || Object.keys(mapping.from.fields).length === 0) {
+          errors.push({
+            type: 'MISSING_ARRAY_EXPLOSION_FIELDS',
+            message: `Array explosion mapping must specify 'fields' object: ${mapping.target}`,
+            location: mapping.target
+          });
+        }
+        
+        // Validate that path indicates array notation
+        if (!mapping.from.path.includes('[*]') && !mapping.from.path.includes('[]')) {
+          errors.push({
+            type: 'INVALID_ARRAY_PATH',
+            message: `Array explosion path must contain [*] or []: ${mapping.from.path}`,
+            location: mapping.target
+          });
+        }
+        
+        // Validate that the table exists (without the .*)
+        const tablePath = mapping.target.replace('.*', '');
+        const parts = tablePath.split('.');
+        if (parts.length >= 3) {
+          const tableExists = Array.from(targetIndex).some(t => 
+            t.startsWith(`${parts[0]}.${parts[1]}.${parts[2]}.`)
+          );
+          if (!tableExists) {
+            errors.push({
+              type: 'INVALID_MAPPING_TARGET',
+              message: `Array explosion target table not found: ${tablePath}`,
+              location: mapping.target
+            });
+          }
+        }
+        
+        // Validate each field mapping in the explosion
+        if (mapping.from.fields) {
+          for (const [fieldName, fieldPath] of Object.entries(mapping.from.fields)) {
+            const fullTarget = mapping.target.replace('.*', `.${fieldName}`);
+            if (!targetIndex.has(fullTarget)) {
+              errors.push({
+                type: 'INVALID_EXPLOSION_FIELD',
+                message: `Array explosion field not found in target table: ${fieldName}`,
+                location: fullTarget
+              });
+            }
+          }
+        }
+      } else {
+        // Regular mapping validation (existing code)
+        if (!targetIndex.has(mapping.target)) {
+          errors.push({
+            type: 'INVALID_MAPPING_TARGET',
+            message: `Mapping target not found: ${mapping.target}`,
+            location: mapping.target
+          });
+        }
       }
 
       // Validate source exists
